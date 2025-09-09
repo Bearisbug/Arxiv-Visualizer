@@ -1,0 +1,2542 @@
+{
+  "paper": {
+    "id": "2506.17368",
+    "title": "SAFEX: Analyzing Vulnerabilities of MoE-Based LLMs via Stable Safety-critical Expert Identification",
+    "authors": [
+      "Zhenglin Lai",
+      "Mengyao Liao",
+      "Dong Xu",
+      "Zebin Zhao",
+      "Zhihang Yuan",
+      "Chao Fan",
+      "Jianqiang Li",
+      "Bingzhe Wu"
+    ],
+    "abstract": "Large language models based on Mixture-of-Experts have achieved substantial gains in efficiency and scalability, yet their architectural uniqueness introduces underexplored safety alignment challenges. Existing safety alignment strategies, predominantly designed for dense models, are ill-suited to address MoE-specific vulnerabilities. In this work, we formalize and systematically study MoE model’s positional vulnerability—the phenomenon where safety-aligned behaviors rely on specific expert modules, revealing critical risks inherent to MoE architectures. To this end, we present SAFEX, an analytical framework that robustly identifies, characterizes, and validates the safety-critical experts using a novel Stability-based Expert Selection (SES) algorithm. Notably, our approach enables the explicit decomposition of safety-critical experts into distinct functional groups, including those responsible for harmful content detection and those controlling safe response generation. Extensive experiments on mainstream MoE models, such as recently released Qwen3-MoE demonstrated that their intrinsic safety mechanisms heavily rely on a small subset of positional experts. Disabling these experts significantly compromised the models’ ability to refuse harmful requests. For Qwen3-MoE with 6144 experts (in FNN layer), we find that disabling as few as 12 identified safety-critical experts can cause the refusal rate to drop by 22%, demonstrating the disproportionate impact of a small set of experts on overall model safety.",
+    "meta": {
+      "source": "arxiv",
+      "arxiv_id": "2506.17368",
+      "created_at": null
+    }
+  },
+  "toc": [
+    {
+      "id": "sec-abstract",
+      "title": "Abstract",
+      "level": 1,
+      "children": []
+    },
+    {
+      "id": "sec-1-introduction",
+      "title": "1 Introduction",
+      "level": 1,
+      "children": []
+    },
+    {
+      "id": "sec-2-workflow-of-safex",
+      "title": "2 Workflow of SAFEX",
+      "level": 1,
+      "children": [
+        {
+          "id": "sec-2-1-dataset-construction",
+          "title": "2.1 Dataset Construction",
+          "level": 2,
+          "children": []
+        },
+        {
+          "id": "sec-2-2-safety-related-expert-activation-probability-modeling",
+          "title": "2.2 Safety-related Expert Activation Probability Modeling",
+          "level": 2,
+          "children": []
+        },
+        {
+          "id": "sec-2-3-expert-functional-categorization-and-localization",
+          "title": "2.3 Expert Functional Categorization and Localization",
+          "level": 2,
+          "children": []
+        },
+        {
+          "id": "sec-2-4-linear-probing-experiment-for-e_id",
+          "title": "2.4 Linear Probing Experiment for E_id",
+          "level": 2,
+          "children": []
+        },
+        {
+          "id": "sec-2-5-expert-masking-experiment-for-e_ctrl",
+          "title": "2.5 Expert Masking Experiment for E_ctrl",
+          "level": 2,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "sec-3-related-work",
+      "title": "3 Related Work",
+      "level": 1,
+      "children": [
+        {
+          "id": "sec-3-1-explainable-exploration-of-llm-security-mechanisms",
+          "title": "3.1 Explainable Exploration of LLM Security Mechanisms",
+          "level": 2,
+          "children": []
+        },
+        {
+          "id": "sec-3-2-mixture-of-experts-moe-architectures",
+          "title": "3.2 Mixture-of-Experts (MoE) Architectures",
+          "level": 2,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "sec-4-conclusion",
+      "title": "4 Conclusion",
+      "level": 1,
+      "children": []
+    },
+    {
+      "id": "sec-references",
+      "title": "References",
+      "level": 1,
+      "children": []
+    },
+    {
+      "id": "sec-a-technical-appendices-and-supplementary-material",
+      "title": "A Technical Appendices and Supplementary Material",
+      "level": 1,
+      "children": []
+    }
+  ],
+  "sections": [
+    {
+      "id": "sec-abstract",
+      "title": "Abstract",
+      "level": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "id": "p-abstract-1",
+          "text": "Large language models based on Mixture-of-Experts have achieved substantial gains in efficiency and scalability, yet their architectural uniqueness introduces underexplored safety alignment challenges. Existing safety alignment strategies, predominantly designed for dense models, are ill-suited to address MoE-specific vulnerabilities. In this work, we formalize and systematically study MoE model’s positional vulnerability—the phenomenon where safety-aligned behaviors rely on specific expert modules, revealing critical risks inherent to MoE architectures. To this end, we present SAFEX, an analytical framework that robustly identifies, characterizes, and validates the safety-critical experts using a novel Stability-based Expert Selection (SES) algorithm. Notably, our approach enables the explicit decomposition of safety-critical experts into distinct functional groups, including those responsible for harmful content detection and those controlling safe response generation. Extensive experiments on mainstream MoE models, such as recently released Qwen3-MoE demonstrated that their intrinsic safety mechanisms heavily rely on a small subset of positional experts. Disabling these experts significantly compromised the models’ ability to refuse harmful requests. For Qwen3-MoE with 6144 experts (in FNN layer), we find that disabling as few as 12 identified safety-critical experts can cause the refusal rate to drop by 22%, demonstrating the disproportionate impact of a small set of experts on overall model safety.",
+          "inline_math": [
+            {
+              "latex": "22\\%",
+              "start": 1300,
+              "end": 1303
+            }
+          ],
+          "citations": []
+        }
+      ]
+    },
+    {
+      "id": "sec-1-introduction",
+      "title": "1 Introduction",
+      "level": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "id": "p-1-1",
+          "text": "Large language models (LLMs) based on Mixture-of-Experts (MoE) architectures, such as Mixtral [1], DeepSeek-R1 [2], and Qwen3-MoE [3], have achieved remarkable advances on a wide range of complex tasks, significantly improving efficiency and scalability by routing inputs dynamically across multiple specialized expert modules. Despite these successes, the distinctive architectural characteristics of MoE-based models raise unique and underexplored safety issues.",
+          "inline_math": [],
+          "citations": [
+            "ref-1",
+            "ref-2",
+            "ref-3"
+          ]
+        },
+        {
+          "type": "paragraph",
+          "id": "p-1-2",
+          "text": "Recent works on safety research of MoE-based LLMs have started to emerge [4, 5], yet remain nascent and primarily focus on exploiting MoE-specific architectural vulnerabilities to attack LLM models. For example, BadMoE [6] identifies and exploits rarely activated experts, referred to as \"dormant experts\", to successfully execute effective adversarial attacks, highlighting significant safety vulnerabilities inherent to MoE-based architectures. However, these existing studies predominantly concentrate on demonstrating potential vulnerabilities to specific attacks and leave a critical gap in comprehensively understanding how existing safety alignment mechanisms influence the internal behaviors of MoE-based LLMs.",
+          "inline_math": [],
+          "citations": [
+            "ref-4",
+            "ref-5",
+            "ref-6"
+          ]
+        },
+        {
+          "type": "paragraph",
+          "id": "p-1-3",
+          "text": "Figure 1 intuitively illustrates that the intrinsic safety-aligned behaviors of MoE-based LLMs strongly depend on specific positional experts, a phenomenon we define as positional vulnerability. Specifically, as Figure 1 shows: when an MoE model processes a typical harmful input, certain experts are consistently activated at a high frequency (represented as bar charts) during decoding (highlighted in red Figure 1 (a)); Notably, when we intentionally freeze (inactivate) these frequently activated experts during inference (illustrated in gray), the model immediately begins generating unsafe responses (Figure 1 (b)); Furthermore, applying advanced jailbreak methods [7–9] to the same harmful input triggers a dramatic shift in the expert activation distribution, resulting in the activation of entirely different experts and subsequently producing unsafe outputs (Figure 1 (c)).",
+          "inline_math": [],
+          "citations": [
+            "ref-7",
+            "ref-8",
+            "ref-9"
+          ]
+        },
+        {
+          "type": "paragraph",
+          "id": "p-1-4",
+          "text": "To systematically investigate this phenomenon of positional vulnerability, we introduce SAFEX, a comprehensive analytical framework explicitly designed to reveal expert activation patterns within safety-critical behaviors and to precisely identify and validate the functional roles of individual experts during safety-related tasks. SAFEX consists of three steps as shown in Figure 1 (d) (see more details in Figure 2):",
+          "inline_math": [],
+          "citations": []
+        },
+        {
+          "type": "figure",
+          "ref_id": "fig-1",
+          "caption": "Figure 1: Positional vulnerability of MoE architecture in current LLMs. (a) Normal harmful request is successfully rejected by MoE. (b) Harmful request passed by MoE due to the masking attack. (c) Harmful request passed by MoE due to the jailbreak attack. (d) The proposed framework SAFEX enables analysis of expert activation patterns and functional roles.",
+          "src": "images/img_001.jpg",
+          "width": null,
+          "height": null,
+          "page_hint": null
+        },
+        {
+          "type": "paragraph",
+          "id": "p-1-5",
+          "text": "Expert Statistics. The primary goal of this step is to employ statistical methods to quantitatively estimate the activation probabilities of different expert modules across distinct input scenarios (such as harmful versus benign prompts), thereby deepening our understanding of expert behaviors related to model safety alignment. However, analyzing expert activation patterns in MoE language models is challenging, since their activation distributions are inherently sensitive to input variations. To address this challenge, inspired by Stability Selection—a robust statistical approach for reliable feature identification [10]—we propose a novel Stability-based Expert Selection (SES) algorithm. SES robustly identifies safety-critical experts by repeatedly sampling empirical datasets independently from the underlying input distribution, estimating expert activation probabilities individually, and aggregating the results through stable intersection mechanisms (see details in Section 2.2).",
+          "inline_math": [],
+          "citations": [
+            "ref-10"
+          ]
+        },
+        {
+          "type": "paragraph",
+          "id": "p-1-6",
+          "text": "Expert Identification. The primary goal of this step is to perform cross-group comparative analyses of expert activation patterns, building upon the statistical results obtained in the previous step. Specifically, we systematically compare expert activation patterns across different data groups (e.g., normal harmful requests versus jailbreak requests) to explicitly identify and categorize experts according to their functional roles in safety-aligned behaviors. In more detail, our analytical method enables us to clearly localize and differentiate experts into two distinct functional groups: (1) Harmful Content Detection Group (HCDG): Experts specialized in identifying and recognizing harmful content within user inputs. (2) Harmful Response Control Group (HRCG): Experts specialized in controlling and enforcing model behaviors to generate appropriate safety-aligned responses (e.g., refusal or rejection responses). By explicitly decomposing experts into these specialized functional groups, our analysis provides deeper insights into how MoE architectures internally organize and allocate safety-aligned responsibilities among expert modules, laying the groundwork for targeted validation experiments in subsequent steps.",
+          "inline_math": [],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-1-7",
+          "text": "Expert Validation. This step primarily aims to quantitatively validate the reliability of the functional expert groups identified in the previous step. Specifically, we design targeted expertlevel validation strategies corresponding to each of the two identified functional groups: (1) Linear probing for the HCDG group: To validate whether experts in this group genuinely encode content detection capabilities, we train linear classifiers (linear probes) on their output representations. By quantitatively measuring metrics such as accuracy, precision, recall, and F1-score, we robustly evaluate the effectiveness of these experts in distinguishing harmful from benign inputs. (2) Expert masking experiment for the HRCG group: To verify the critical role of these experts in controlling safety-aligned responses, we selectively mask (disable) these experts and measure the resulting changes in the model’s refusal rate. A significant degradation in refusal behaviors confirms the essential role of these experts in enforcing model safety mechanisms. Together, these expert-granular validation strategies provide a clear, quantitative assessment of the functional robustness and reliability of the expert groups identified through our statistical and analytical workflows.",
+          "inline_math": [],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-1-8",
+          "text": "The primary contributions of this work are as follows:",
+          "inline_math": [],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-1-9",
+          "text": "(a) We propose a general analytical workflow SAFEX aimed at systematically characterizing positional vulnerability and safety-aligned functional expert behaviors in MoE models. To the best of our knowledge, this is the first work to formally define and study this critical phenomenon in MoE architectures.\n(b) To enhance the reliability of expert activation probability estimation, we design a stability-based statistical selection algorithm inspired by Stability-based Feature Selection (SES). This approach provides robust identification and validation of safety-critical positional experts, significantly improving the interpretability and reliability of analytical outcomes.\n(c) Applying SAFEX to mainstream MoE-based LLMs (including Mixtral-8x7B-Instruct-v0.1, Qwen1.5-MoE-A2.7B-Chat, deepseek-moe-16b-chat, and recently released Qwen3-30B-A3B), we empirically demonstrate the prevalence of positional vulnerabilities and identify safetycritical experts whose perturbation at the single-expert level significantly compromises overall model safety. These findings highlight intrinsic weaknesses in current MoE architectures and provide critical insights towards developing targeted alignment and defense strategies specifically designed for MoE-based language models.",
+          "inline_math": [],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-1-10",
+          "text": "Overall, our findings and methodological contributions not only deepen the understanding of safety alignment mechanisms in MoE models but also lay the groundwork for future research on more robust alignment algorithms and safety-enhanced MoE architectures.",
+          "inline_math": [],
+          "citations": []
+        }
+      ]
+    },
+    {
+      "id": "sec-2-workflow-of-safex",
+      "title": "2 Workflow of SAFEX",
+      "level": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "id": "p-2-1",
+          "text": "Overview. In this section, we introduce SAFEX as shown in Figure 2, an analytical framework designed to systematically analyze the internal behaviors of MoE-based LLMs. This section first presents comparative datasets construction in Section 2.1, which are used for obtaining expert patterns on harmful input distribution. Then we describe each key step of SAFEX in Sections 2.2–2.5.",
+          "inline_math": [],
+          "citations": []
+        }
+      ]
+    },
+    {
+      "id": "sec-2-1-dataset-construction",
+      "title": "2.1 Dataset Construction",
+      "level": 2,
+      "content": [
+        {
+          "type": "paragraph",
+          "id": "p-2-1-1",
+          "text": "To systematically analyze the safety-alignment behaviors of MoE-based LLMs, we carefully construct a specialized evaluation dataset. Our dataset consists of three distinct groups designed to cover different input scenarios relevant to model safety alignment:",
+          "inline_math": [],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-1-2",
+          "text": "• Regular Group ($\\mathcal { D } _ { R e g u l a r }$): This group consists of original harmful requests. To ensure comprehensive coverage, we uniformly sample harmful prompts from multiple predefined harmful categories (e.g., fraud, health consultation, illegal activities) from existing different benchmark datasets [11–15]. The detailed distribution of harmful content categories in $\\mathcal { D } _ { R e g u l a r }$ and their corresponding data sources are illustrated in the appendix. • Jailbreak Group ($\\mathcal { D } _ { J a i l b r e a k }$): Corresponding directly to the Regular group, the Jailbreak group contains harmful requests transformed using advanced jailbreak techniques—such as semantic paraphrasing [16], adversarial perturbations, or context reframing—to bypass the model’s safety mechanisms. Each prompt in this group is derived from the Regular group, enabling direct comparative analyses.",
+          "inline_math": [
+            {
+              "latex": "\\mathcal { D } _ { R e g u l a r }",
+              "start": 18,
+              "end": 41
+            },
+            {
+              "latex": "\\mathcal { D } _ { R e g u l a r }",
+              "start": 320,
+              "end": 339
+            },
+            {
+              "latex": "\\mathcal { D } _ { J a i l b r e a k }",
+              "start": 431,
+              "end": 457
+            }
+          ],
+          "citations": [
+            "ref-11",
+            "ref-12",
+            "ref-13",
+            "ref-14",
+            "ref-15",
+            "ref-16"
+          ]
+        },
+        {
+          "type": "figure",
+          "ref_id": "fig-2",
+          "caption": "Figure 2: Overall workflow of SAFEX.",
+          "src": "images/img_002.jpg",
+          "width": null,
+          "height": null,
+          "page_hint": null
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-1-3",
+          "text": "• Benign Group ($\\mathcal { D } _ { B e n i g n }$): This control group consists exclusively of neutral, harmless requests that do not contain any harmful or sensitive content. These samples allow us to establish a baseline for understanding expert activation patterns in typical, non-adversarial inference scenarios. We constructed $\\mathcal { D } _ { B e n i g n }$ by selecting the same number of samples in openai-moderation-apievaluation [11] and wildguardtest [15].",
+          "inline_math": [
+            {
+              "latex": "\\mathcal { D } _ { B e n i g n }",
+              "start": 16,
+              "end": 38
+            },
+            {
+              "latex": "\\mathcal { D } _ { B e n i g n }",
+              "start": 301,
+              "end": 320
+            }
+          ],
+          "citations": [
+            "ref-11",
+            "ref-15"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sec-2-2-safety-related-expert-activation-probability-modeling",
+      "title": "2.2 Safety-related Expert Activation Probability Modeling",
+      "level": 2,
+      "content": [
+        {
+          "type": "paragraph",
+          "id": "p-2-2-1",
+          "text": "The core task in our proposed workflow is to model the conditional probability distribution of expert activation states given specific input prompt types (e.g., harmful requests) as shown in Figure 2 (a). Formally, for an expert $e$, given a prompt distribution $\\mathcal { X }$ sharing the same attribute (e.g., harmful content), we aim to model the conditional activation probability $p ( e \\mid \\mathcal { X } )$, as the probability of activating the expert $e$ during inference over a dataset.",
+          "inline_math": [
+            {
+              "latex": "e",
+              "start": 228,
+              "end": 229
+            },
+            {
+              "latex": "\\mathcal { X }",
+              "start": 259,
+              "end": 270
+            },
+            {
+              "latex": "p ( e \\mid \\mathcal { X } )",
+              "start": 371,
+              "end": 389
+            },
+            {
+              "latex": "e",
+              "start": 438,
+              "end": 439
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-2-2",
+          "text": "The most straightforward way to estimate this conditional distribution is through empirical frequency counting on a specific prompt dataset $X$ sampling from $\\mathcal { X }$, and computing the empirical estimation $p ( e | X )$. Specifically, given a particular MoE architecture and a set of prompts $X = \\{ x ^ { ( 1 ) } , x ^ { ( 2 ) } , \\ldots , x ^ { ( N ) } \\}$, we perform inference and record expert activation states at each token position. Given an attention block indexed by $l$, each token position $t$ within the full inference process (including encoding and decoding phases) activates exactly one expert from the set of experts $\\mathcal { E } = \\{ e _ { 1 } , e _ { 2 } , \\dots , e _ { M } \\}$. We denote the activated expert at layer $l$, token position $t$, for prompt $x ^ { ( i ) }$ as $e _ { l , t } ^ { ( i ) }$. Thus, the conditional probability of expert $e$ activation can be empirically estimated as:",
+          "inline_math": [
+            {
+              "latex": "X",
+              "start": 141,
+              "end": 142
+            },
+            {
+              "latex": "\\mathcal { X }",
+              "start": 157,
+              "end": 168
+            },
+            {
+              "latex": "p ( e | X )",
+              "start": 211,
+              "end": 221
+            },
+            {
+              "latex": "X = \\{ x ^ { ( 1 ) } , x ^ { ( 2 ) } , \\ldots , x ^ { ( N ) } \\}",
+              "start": 299,
+              "end": 352
+            },
+            {
+              "latex": "l",
+              "start": 463,
+              "end": 464
+            },
+            {
+              "latex": "t",
+              "start": 484,
+              "end": 485
+            },
+            {
+              "latex": "\\mathcal { E } = \\{ e _ { 1 } , e _ { 2 } , \\dots , e _ { M } \\}",
+              "start": 602,
+              "end": 645
+            },
+            {
+              "latex": "l",
+              "start": 683,
+              "end": 684
+            },
+            {
+              "latex": "t",
+              "start": 702,
+              "end": 703
+            },
+            {
+              "latex": "x ^ { ( i ) }",
+              "start": 716,
+              "end": 726
+            },
+            {
+              "latex": "e _ { l , t } ^ { ( i ) }",
+              "start": 730,
+              "end": 745
+            },
+            {
+              "latex": "e",
+              "start": 791,
+              "end": 792
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "equation",
+          "ref_id": "eq-1",
+          "latex": "\np ( e \\mid X ) = { \\frac { \\sum _ { i = 1 } ^ { N } \\sum _ { t = 1 } ^ { T _ { i } } \\mathbb { I } ( e _ { l , t } ^ { ( i ) } = e ) } { \\sum _ { i = 1 } ^ { N } T _ { i } } }\n",
+          "number": null
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-2-3",
+          "text": "where $\\mathbb { I } ( \\cdot )$ is the indicator function, $T _ { i }$ denotes the total number of tokens generated in response to prompt $\\boldsymbol { x } ^ { ( i ) }$, and $N$ is the total number of prompts in the dataset $X$.",
+          "inline_math": [
+            {
+              "latex": "\\mathbb { I } ( \\cdot )",
+              "start": 6,
+              "end": 18
+            },
+            {
+              "latex": "T _ { i }",
+              "start": 49,
+              "end": 55
+            },
+            {
+              "latex": "\\boldsymbol { x } ^ { ( i ) }",
+              "start": 129,
+              "end": 142
+            },
+            {
+              "latex": "N",
+              "start": 150,
+              "end": 151
+            },
+            {
+              "latex": "X",
+              "start": 196,
+              "end": 197
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-2-4",
+          "text": "Stability-based Expert Selection. However, the direct frequency counting method inherently depends on specific empirical input distributions, potentially limiting the generalizability of our find ings. To alleviate this dependency and achieve a more robust estimation, we propose an alternative sampling strategy motivated by stability selection, a principled statistical approach [10]. Specifically, given an underlying input distribution $\\mathcal { X }$, we independently draw multiple empirical datasets $\\{ X ^ { ( 1 ) } , X ^ { ( 2 ) } , \\ldots , X ^ { ( K ) } \\}$, each consisting of samples independently and identically distributed (i.i.d.) from $\\mathcal { X }$. In practical implementation, we propose to sample without replacement from a sufficiently large dataset (e.g., $\\mathcal { D } _ { R e g u l a r } )$). For each empirical dataset $X ^ { ( k ) }$, we independently estimate the conditional probability distribution of expert activation as follows:",
+          "inline_math": [
+            {
+              "latex": "\\mathcal { X }",
+              "start": 448,
+              "end": 459
+            },
+            {
+              "latex": "\\{ X ^ { ( 1 ) } , X ^ { ( 2 ) } , \\ldots , X ^ { ( K ) } \\}",
+              "start": 511,
+              "end": 564
+            },
+            {
+              "latex": "\\mathcal { X }",
+              "start": 652,
+              "end": 663
+            },
+            {
+              "latex": "\\mathcal { D } _ { R e g u l a r }",
+              "start": 773,
+              "end": 796
+            },
+            {
+              "latex": "X ^ { ( k ) }",
+              "start": 826,
+              "end": 836
+            }
+          ],
+          "citations": [
+            "ref-10"
+          ]
+        },
+        {
+          "type": "equation",
+          "ref_id": "eq-2",
+          "latex": "\np ( e \\mid X ^ { ( k ) } ) = { \\frac { \\sum _ { x ^ { ( i ) } \\in X ^ { ( k ) } } \\sum _ { t = 1 } ^ { T _ { i } } \\mathbb { I } ( e _ { l , t } ^ { ( i ) } = e ) } { \\sum _ { x ^ { ( i ) } \\in X ^ { ( k ) } } T _ { i } } }\n",
+          "number": null
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-2-5",
+          "text": "where $e _ { l , t } ^ { ( i ) }$ denotes the expert activated at decoding step $t$ for input $\\boldsymbol { x } ^ { ( i ) }$, and $T _ { i }$ is the length of the decoded sequence for input $x ^ { ( i ) }$.",
+          "inline_math": [
+            {
+              "latex": "e _ { l , t } ^ { ( i ) }",
+              "start": 6,
+              "end": 21
+            },
+            {
+              "latex": "t",
+              "start": 62,
+              "end": 63
+            },
+            {
+              "latex": "\\boldsymbol { x } ^ { ( i ) }",
+              "start": 75,
+              "end": 88
+            },
+            {
+              "latex": "T _ { i }",
+              "start": 96,
+              "end": 102
+            },
+            {
+              "latex": "x ^ { ( i ) }",
+              "start": 157,
+              "end": 167
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-2-6",
+          "text": "Next, we aggregate these dataset-level estimates by identifying the intersection of top-ranked experts across all independently sampled empirical datasets, thereby obtaining a stable set of frequently activated (\"head\") experts robust to variations in the empirical input distribution. Formally, we define the set of top experts from each empirical dataset $X ^ { ( k ) }$ as:",
+          "inline_math": [
+            {
+              "latex": "X ^ { ( k ) }",
+              "start": 378,
+              "end": 388
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-2-7",
+          "text": "$$\\mathscr { E } _ { t o p } ^ { ( k ) } ( X ) = \\mathrm { T o p } \\mathrm { - N } _ { e } \\left( p ( e \\mid X ^ { ( k ) } ) \\right) ,$$",
+          "inline_math": [],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-2-8",
+          "text": "where Top-$\\mathbf { \\nabla } \\cdot \\ N _ { e } ( \\cdot )$ denotes the set of top-$\\mathbf { \\nabla } \\cdot \\mathbf { N }$ experts selected based on their activation probabilities. Finally, the distribution-independent expert set is computed by intersecting the top experts across all sampled empirical datasets:",
+          "inline_math": [
+            {
+              "latex": "\\mathbf { \\nabla } \\cdot \\ N _ { e } ( \\cdot )",
+              "start": 11,
+              "end": 30
+            },
+            {
+              "latex": "\\mathbf { \\nabla } \\cdot \\mathbf { N }",
+              "start": 56,
+              "end": 70
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-2-9",
+          "text": "$$\\mathcal { E } _ { t o p } ( X ) = \\bigcap _ { k = 1 } ^ { K } \\mathcal { E } _ { t o p } ^ { ( k ) } ( X ) .$$",
+          "inline_math": [],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-2-10",
+          "text": "This revised procedure ensures that our identified expert set is less sensitive to specific dataset biases and more accurately reflects robust expert activation patterns inherent to the underlying data distribution $\\mathcal { X }$.",
+          "inline_math": [
+            {
+              "latex": "\\mathcal { X }",
+              "start": 221,
+              "end": 232
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-2-11",
+          "text": "We apply the above modeling procedure separately to each of the three constructed data groups—namely, the Regular group $\\mathcal { D } _ { R e g u l a r }$, the Jailbreak group $\\mathcal { D } _ { J a i l b r e a k }$, and the Benign group $\\mathcal { D } _ { B e n i g n }$. We derive three distinct expert activation sets: $\\mathcal { E } _ { t o p } ( \\mathcal { D } _ { R e g u l a r } )$, $\\mathcal { E } _ { t o p } ( \\mathcal { D } _ { J a i l b r e a k } )$, and $\\mathcal { E } _ { t o p } ( { D _ { B e n i g n } } )$, which represent experts activated consistently within Regular, Jailbreak, and Benign scenarios, respectively.",
+          "inline_math": [
+            {
+              "latex": "\\mathcal { D } _ { R e g u l a r }",
+              "start": 131,
+              "end": 150
+            },
+            {
+              "latex": "\\mathcal { D } _ { J a i l b r e a k }",
+              "start": 172,
+              "end": 198
+            },
+            {
+              "latex": "\\mathcal { D } _ { B e n i g n }",
+              "start": 221,
+              "end": 243
+            },
+            {
+              "latex": "\\mathcal { E } _ { t o p } ( \\mathcal { D } _ { R e g u l a r } )",
+              "start": 303,
+              "end": 336
+            },
+            {
+              "latex": "\\mathcal { E } _ { t o p } ( \\mathcal { D } _ { J a i l b r e a k } )",
+              "start": 338,
+              "end": 374
+            },
+            {
+              "latex": "\\mathcal { E } _ { t o p } ( { D _ { B e n i g n } } )",
+              "start": 381,
+              "end": 414
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-2-12",
+          "text": "Expert Activation Visualization and Analysis. We apply the above expert activation modeling framework systematically across three representative MoE-based LLMs: Mixtral-8x7B-Instruct$\\mathrm { v 0 . 1 }$ [1], deepseek-moe-16b-chat [17], and Qwen3-30B-A3B [3]. For each model, we identify and visualize the layer and expert indices of the most frequently activated experts, together with their activation probabilities, as shown in Figure 3. Each plot highlights distinctive activation patterns across the three evaluation datasets, providing intuitive insights into the functional specialization of expert modules.",
+          "inline_math": [
+            {
+              "latex": "\\mathrm { v 0 . 1 }",
+              "start": 188,
+              "end": 203
+            }
+          ],
+          "citations": [
+            "ref-1",
+            "ref-17",
+            "ref-3"
+          ]
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-2-13",
+          "text": "Figure 3 shows the activation probability distributions of top-ranked experts across different MoE models and their corresponding datasets (this figure only shows 3 models due to page limits, more results can be found in Appendix). The horizontal dashed lines represent the theoretical mean activation probabilities under each MoE configuration. For the Regular dataset (first column), expert activation patterns differ significantly across architectures. Both Qwen3-30B-A3B and Mixtral-8x7BInstruct-$\\mathbf { \\nabla \\cdot v 0 . 1 }$ exhibit prominent head-expert concentration—certain experts activate at substantially higher probabilities than the model average—while deepseek-moe-16b-chat shows an even stronger concentration with larger variance across experts. In contrast, Mixtral’s routing appears more balanced, with activation levels closely aligning with the mean. This discrepancy likely reflects differences in post-training safety alignment strategies among the models.",
+          "inline_math": [
+            {
+              "latex": "\\mathbf { \\nabla \\cdot v 0 . 1 }",
+              "start": 660,
+              "end": 680
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-2-14",
+          "text": "For the Jailbreak dataset (second column), we observe a notable shift in top-expert activations compared to the Regular dataset (as indicated by changes in expert indices along the $\\mathbf { X }$-axis), supporting our earlier hypothesis. Particularly for the Mixtral-8x7B-Instruct-v0.1 model, the variance among top expert activations significantly increases after jailbreak, suggesting increased specialization or sensitivity in expert activations under adversarial conditions.",
+          "inline_math": [
+            {
+              "latex": "\\mathbf { X }",
+              "start": 228,
+              "end": 239
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "figure",
+          "ref_id": "fig-3",
+          "caption": "Figure 3: Activation probability visualization of $\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { R e g u l a r } } )$, $\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { J a i l b r e a k } } )$, and $\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { B e n i g n } } )$ for three MoE models. Dashed lines denote the theoretical mean activation probability under each MoE configuration.",
+          "src": "images/img_003.jpg",
+          "width": null,
+          "height": null,
+          "page_hint": null
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-2-15",
+          "text": "Finally, the third column illustrates activation patterns on benign requests, revealing that expert activation patterns for this dataset resemble those seen in the Regular dataset, indicating consistent model behaviors under non-adversarial conditions. Our analysis reveals that:",
+          "inline_math": [],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-2-16",
+          "text": "• Expert activation patterns vary notably across different input distributions. • Jailbreak inputs significantly skew activations towards specific experts, highlighting potential safety vulnerabilities.",
+          "inline_math": [],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-2-17",
+          "text": "These insights provide valuable guidance for future research on safety alignment and robustness improvements, highlighting the importance of addressing positional vulnerabilities within MoE architectures for safer model deployment. Furthermore, these results form the basis for subsequent in-depth analyses and validation experiments.",
+          "inline_math": [],
+          "citations": []
+        }
+      ]
+    },
+    {
+      "id": "sec-2-3-expert-functional-categorization-and-localization",
+      "title": "2.3 Expert Functional Categorization and Localization",
+      "level": 2,
+      "content": [
+        {
+          "type": "paragraph",
+          "id": "p-2-3-1",
+          "text": "Building upon the expert activation statistics obtained previously, we further employ straightforward set-based analyses to precisely identify and categorize expert modules according to their specific functional roles in safety alignment, as shown in Figure 2 (b). Specifically, we define two key functional expert groups:",
+          "inline_math": [],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-3-2",
+          "text": "• Harmful Content Identification Experts ($\\mathcal { E } _ { \\mathrm { i d } }$): Experts were consistently activated across both Regular and Jailbreak groups, reflecting their shared role in detecting and recognizing harmful content. Formally, this set is computed as: $\\mathscr { E } _ { \\mathrm { i d } } = \\mathscr { E } _ { t o p } ( \\mathcal { D } _ { R e g u l a r } ) \\cap \\mathscr { E } _ { t o p } ( \\mathcal { D } _ { J a i l b r e a k } )$\n• Safety Control Experts ($\\mathcal { E } _ { \\mathrm { c t r l } }$): Experts were uniquely activated within the Regular group, indicating their specialized responsibility for enforcing safety-aligned refusal responses. Formally, this set is computed as:",
+          "inline_math": [
+            {
+              "latex": "\\mathcal { E } _ { \\mathrm { i d } }",
+              "start": 41,
+              "end": 60
+            },
+            {
+              "latex": "\\mathscr { E } _ { \\mathrm { i d } } = \\mathscr { E } _ { t o p } ( \\mathcal { D } _ { R e g u l a r } ) \\cap \\mathscr { E } _ { t o p } ( \\mathcal { D } _ { J a i l b r e a k } )",
+              "start": 248,
+              "end": 328
+            },
+            {
+              "latex": "\\mathcal { E } _ { \\mathrm { c t r l } }",
+              "start": 357,
+              "end": 379
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "equation",
+          "ref_id": "eq-3",
+          "latex": "\n\\mathcal { E } _ { \\mathrm { c t r l } } = \\mathcal { E } _ { t o p } ( \\mathcal { D } _ { R e g u l a r } ) - \\mathcal { E } _ { t o p } ( \\mathcal { D } _ { J a i l b r e a k } )\n",
+          "number": null
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-3-3",
+          "text": "To rigorously validate the functional properties of these categorized expert groups, we design two targeted core experiments:",
+          "inline_math": [],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-3-4",
+          "text": "• Linear Probing Experiment for Harmful Content Identification Experts ($\\mathcal { E } _ { \\mathrm { i d } }$): We employ linear probing techniques to quantitatively assess whether the hidden states outputted by these experts contain significant and discriminative features specifically indicative of harmful content. This experiment directly tests the hypothesis that these experts are specialized in harmful content recognition. • Expert Masking Experiment for Safety Control Experts ($\\mathcal { E } _ { \\mathrm { c t r l } }$): We selectively mask outputs from the identified safety control experts during inference and evaluate whether this masking significantly reduces the model’s refusal rates on harmful prompts. This experiment empirically verifies the critical role of these experts in enforcing model safety alignment.",
+          "inline_math": [
+            {
+              "latex": "\\mathcal { E } _ { \\mathrm { i d } }",
+              "start": 72,
+              "end": 91
+            },
+            {
+              "latex": "\\mathcal { E } _ { \\mathrm { c t r l } }",
+              "start": 511,
+              "end": 533
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-3-5",
+          "text": "By clearly identifying and validating these specialized expert modules, our approach provides critical insights into the internal mechanisms of MoE-based LLMs, revealing essential pathways for harmful content detection and safety-aligned behavior control.",
+          "inline_math": [],
+          "citations": []
+        }
+      ]
+    },
+    {
+      "id": "sec-2-4-linear-probing-experiment-for-e_id",
+      "title": "2.4 Linear Probing Experiment for $\\mathcal { E } _ { \\bf i d }$",
+      "level": 2,
+      "content": [
+        {
+          "type": "paragraph",
+          "id": "p-2-4-1",
+          "text": "To empirically verify the functional specificity of the Harmful Content Identification Experts ($\\mathcal { E } _ { \\mathrm { i d } }$), we design a linear probing experiment as shown in Figure 2 (c.1). Specifically, we utilize the output features from the feed-forward networks (FFNs) of the identified experts as inputs to a linear classifier, which predicts a binary label indicating whether the input prompt is harmful or benign.",
+          "inline_math": [
+            {
+              "latex": "\\mathcal { E } _ { \\mathrm { i d } }",
+              "start": 89,
+              "end": 108
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-4-2",
+          "text": "Formally, given an input token sequence $\\boldsymbol { x } = ( x _ { 1 } , \\dots , x _ { T } )$, we extract the hidden representations from the FFN outputs of all experts in $\\mathcal { E } _ { \\mathrm { i d } }$. A linear classifier is then trained on top of these representations to predict:",
+          "inline_math": [
+            {
+              "latex": "\\boldsymbol { x } = ( x _ { 1 } , \\dots , x _ { T } )",
+              "start": 40,
+              "end": 71
+            },
+            {
+              "latex": "\\mathcal { E } _ { \\mathrm { i d } }",
+              "start": 161,
+              "end": 177
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "equation",
+          "ref_id": "eq-4",
+          "latex": "\n\\hat { y } = \\sigma ( \\mathbf { W } \\times \\mathbf { h } _ { \\mathrm { i d } } ( x ) + b ) , \\quad \\hat { y } \\in \\{ 0 , 1 \\}\n",
+          "number": null
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-4-3",
+          "text": "where $\\sigma$ denotes a logistic sigmoid function, $\\mathbf { W } , b$ are the classifier parameters. In practice, we use the average (across all input tokens) output from FFN layer of the selected expert to construct $\\mathbf { h } _ { \\mathrm { i d } } ( x )$.",
+          "inline_math": [
+            {
+              "latex": "\\sigma",
+              "start": 6,
+              "end": 13
+            },
+            {
+              "latex": "\\mathbf { W } , b",
+              "start": 48,
+              "end": 59
+            },
+            {
+              "latex": "\\mathbf { h } _ { \\mathrm { i d } } ( x )",
+              "start": 218,
+              "end": 235
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-4-4",
+          "text": "To train and evaluate this linear probe, we construct additional labeled datasets: (1)Training Set: comprising prompts labeled explicitly as harmful or benign, independently collected from publicly available benchmark datasets [11–15]. (2) Test Set: similarly labeled, used exclusively for evaluating classifier performance.",
+          "inline_math": [],
+          "citations": [
+            "ref-11",
+            "ref-12",
+            "ref-13",
+            "ref-14",
+            "ref-15"
+          ]
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-4-5",
+          "text": "To demonstrate that experts within $\\mathcal { E } _ { \\mathrm { i d } }$ carry safety-related identification information, we trained linear probes individually on features output by each expert in this set. We computed their accuracy, precision, recall, and F1-score on a held-out test set. Additionally, we randomly selected five experts from nearby positions as a baseline, trained linear probes similarly, and recorded their performance metrics for comparison.",
+          "inline_math": [
+            {
+              "latex": "\\mathcal { E } _ { \\mathrm { i d } }",
+              "start": 33,
+              "end": 49
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-4-6",
+          "text": "Finally, we present these linear probes performance metrics across different models using box plots in Figure 4. As shown in the figure, linear probes constructed from experts within $\\mathcal { E } _ { \\mathrm { i d } }$ consistently outperform the randomly selected experts ($\\mathcal { E } _ { \\mathrm { r a n d o m } }$) across various metrics and model architectures. This substantial performance gap quantitatively confirms the distinctive role and discriminative capacity of the identified expert group ($\\mathcal { E } _ { \\mathrm { i d } }$) in recognizing and distinguishing harmful content within MoE-based LLMs.",
+          "inline_math": [
+            {
+              "latex": "\\mathcal { E } _ { \\mathrm { i d } }",
+              "start": 188,
+              "end": 204
+            },
+            {
+              "latex": "\\mathcal { E } _ { \\mathrm { r a n d o m } }",
+              "start": 255,
+              "end": 277
+            },
+            {
+              "latex": "\\mathcal { E } _ { \\mathrm { i d } }",
+              "start": 428,
+              "end": 444
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "figure",
+          "ref_id": "fig-4",
+          "caption": "Figure 4: Performance comparison of linear probes trained on safety-relevant experts from $\\mathcal { E } _ { \\mathrm { i d } }$ versus randomly selected experts. Box plots illustrate accuracy, precision, recall, and F1-score metrics across different model architectures. Results consistently show superior performance of linear probes based on experts identified within $\\mathcal { E } _ { \\mathrm { i d } }$ , indicating these experts encode specialized features related to safety-sensitive content identification.",
+          "src": "images/img_004.jpg",
+          "width": null,
+          "height": null,
+          "page_hint": null
+        }
+      ]
+    },
+    {
+      "id": "sec-2-5-expert-masking-experiment-for-e_ctrl",
+      "title": "2.5 Expert Masking Experiment for ${ \\mathcal E } _ { \\bf c t r l }$",
+      "level": 2,
+      "content": [
+        {
+          "type": "paragraph",
+          "id": "p-2-5-1",
+          "text": "To empirically verify the functional role of the identified Safety Control Experts ($\\mathcal { E } _ { \\mathrm { c t r l } }$), we design a targeted masking experiment as shown in Figure 2 (c.2). Specifically, we apply a straightforward masking strategy to selectively disable the outputs from these experts during inference and systematically observe the resulting changes in the LLM’s refusal rates for harmful content requests.",
+          "inline_math": [
+            {
+              "latex": "\\mathcal { E } _ { \\mathrm { c t r l } }",
+              "start": 79,
+              "end": 101
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-5-2",
+          "text": "Formally, let $x$ denote an input prompt, and let $\\mathbf { z }$ be the hidden representation of $x$ at the input to a MoE layer (e.g., the output of a previous Transformer sub-layer). The standard output of the MoE layer can then be expressed as:",
+          "inline_math": [
+            {
+              "latex": "x",
+              "start": 14,
+              "end": 15
+            },
+            {
+              "latex": "\\mathbf { z }",
+              "start": 49,
+              "end": 60
+            },
+            {
+              "latex": "x",
+              "start": 92,
+              "end": 93
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "equation",
+          "ref_id": "eq-5",
+          "latex": "\n\\mathbf { h } ( \\mathbf { z } ) = \\sum _ { e \\in \\mathcal { E } } g _ { e } ( \\mathbf { z } ) \\cdot \\mathrm { F F N } _ { e } ( \\mathbf { z } ) ,\n",
+          "number": null
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-5-3",
+          "text": "where $g _ { e } ( \\mathbf { z } )$ denotes the gating function that dynamically assigns weights to each expert, and $\\mathrm { F F N } _ { e } ( \\mathbf { z } )$ is the output of expert $e$ given the input $\\mathbf { z }$. Here, $\\mathbf { h } ( \\mathbf { z } )$ represents the aggregated output of the MoE layer, which is subsequently fed into downstream layers (e.g., for decoding or further contextualization).",
+          "inline_math": [
+            {
+              "latex": "g _ { e } ( \\mathbf { z } )",
+              "start": 6,
+              "end": 21
+            },
+            {
+              "latex": "\\mathrm { F F N } _ { e } ( \\mathbf { z } )",
+              "start": 107,
+              "end": 127
+            },
+            {
+              "latex": "e",
+              "start": 151,
+              "end": 152
+            },
+            {
+              "latex": "\\mathbf { z }",
+              "start": 171,
+              "end": 182
+            },
+            {
+              "latex": "\\mathbf { h } ( \\mathbf { z } )",
+              "start": 190,
+              "end": 201
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-5-4",
+          "text": "In our masking experiment, we modify the routing mechanism by assigning a logit value of $- \\infty$ to each expert in ${ \\mathcal E } _ { \\mathrm { c t r l } }$. After softmax normalization, the gating probabilities for these experts become effectively zero, thereby excluding them from selection:",
+          "inline_math": [
+            {
+              "latex": "- \\infty",
+              "start": 91,
+              "end": 98
+            },
+            {
+              "latex": "{ \\mathcal E } _ { \\mathrm { c t r l } }",
+              "start": 119,
+              "end": 139
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "equation",
+          "ref_id": "eq-6",
+          "latex": "\n\\mathbf { h } _ { \\mathrm { m a s k e d } } ( \\mathbf { z } ) = \\sum _ { e \\in \\mathcal { E } - \\mathcal { E } _ { \\mathrm { c t r l } } } g _ { e } ( \\mathbf { z } ) \\cdot \\mathrm { F F N } _ { e } ( \\mathbf { z } ) .\n",
+          "number": null
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-5-5",
+          "text": "Table 1 comprehensively summarizes the changes in refusal rates of various MoE models on standard harmful queries after masking experts identified as belonging to the control group ${ \\mathcal E } _ { \\mathrm { c t r l } }$. For each identified safety control expert group, we explicitly report the number of experts in a separate column. The results demonstrate a substantial decrease in the refusal rates of harmful requests when freezing the decoding-phase experts within ${ \\mathcal E } _ { \\mathrm { c t r l } }$.",
+          "inline_math": [
+            {
+              "latex": "{ \\mathcal E } _ { \\mathrm { c t r l } }",
+              "start": 201,
+              "end": 221
+            },
+            {
+              "latex": "{ \\mathcal E } _ { \\mathrm { c t r l } }",
+              "start": 478,
+              "end": 498
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-5-6",
+          "text": "Notably, the set $\\mathcal { E } _ { c t r l }$ typically consists of only a small number of experts. The fact that merely masking such a negligible fraction of expert neurons within the original model leads to significant performance deterioration highlights a crucial limitation: the intrinsic safety-alignment mechanisms disproportionately depend on a few specialized experts. For instance, in the recently released opensource model Qwen3-30B-A3B, masking only 12 safety-critical experts results in a remarkable $\\bar { 2 } 2 \\%$ decrease in refusal rate, underscoring the significant positional vulnerability of MoE models inherent in current safety mechanisms.",
+          "inline_math": [
+            {
+              "latex": "\\mathcal { E } _ { c t r l }",
+              "start": 17,
+              "end": 32
+            },
+            {
+              "latex": "\\bar { 2 } 2 \\%",
+              "start": 501,
+              "end": 510
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "table",
+          "ref_id": "tbl-1",
+          "caption": "Table 1: Comparison of refusal rates before and after masking safety-control experts.",
+          "html": "<table><tr><td>Type</td><td>Model</td><td>|Ectrl|</td><td>Before Mask</td><td>After Mask</td><td>Jailbreak</td></tr><tr><td rowspan=\"4\">MoE</td><td>Qwen3-30B-A3B [3]</td><td>12</td><td>93.6%</td><td>71.6% (22.0%)</td><td>45.2% (48.4%)</td></tr><tr><td>Qwen1.5-MoE-A2.7B-Chat [18]</td><td>5</td><td>87.4%</td><td>65.0% (22.4%)</td><td>52.0% (35.4%)</td></tr><tr><td>Deepseek-moe-16b-chat [17]</td><td>5</td><td>85.2%</td><td>64.4% (20.8%)</td><td>52.4% (32.8%)</td></tr><tr><td>Mixtral-8x7B-Instruct-v0.1 [1]</td><td>2</td><td>70.8%</td><td>51.2% (19.6%)</td><td>47.0% (23.8%)</td></tr><tr><td rowspan=\"3\">Dense</td><td>Qwen3-32B-Instruct [3]</td><td></td><td>92.6%</td><td></td><td>64.8% (27.8%)</td></tr><tr><td>Qwen1.5-32B-Chat [19]</td><td></td><td>88.0%</td><td></td><td>54.8% (33.2%)</td></tr><tr><td>Mistral-7B-v0.1 [20]</td><td></td><td>69.8%</td><td></td><td>48.4% (21.4%)</td></tr></table>",
+          "rows": [
+            [
+              "Type",
+              "Model",
+              "|Ectrl|",
+              "Before Mask",
+              "After Mask",
+              "Jailbreak"
+            ],
+            [
+              "MoE",
+              "Qwen3-30B-A3B [3]",
+              "12",
+              "93.6%",
+              "71.6% (22.0%)",
+              "45.2% (48.4%)"
+            ],
+            [
+              "MoE",
+              "Qwen1.5-MoE-A2.7B-Chat [18]",
+              "5",
+              "87.4%",
+              "65.0% (22.4%)",
+              "52.0% (35.4%)"
+            ],
+            [
+              "MoE",
+              "Deepseek-moe-16b-chat [17]",
+              "5",
+              "85.2%",
+              "64.4% (20.8%)",
+              "52.4% (32.8%)"
+            ],
+            [
+              "MoE",
+              "Mixtral-8x7B-Instruct-v0.1 [1]",
+              "2",
+              "70.8%",
+              "51.2% (19.6%)",
+              "47.0% (23.8%)"
+            ],
+            [
+              "Dense",
+              "Qwen3-32B-Instruct [3]",
+              "",
+              "92.6%",
+              "",
+              "64.8% (27.8%)"
+            ],
+            [
+              "Dense",
+              "Qwen1.5-32B-Chat [19]",
+              "",
+              "88.0%",
+              "",
+              "54.8% (33.2%)"
+            ],
+            [
+              "Dense",
+              "Mistral-7B-v0.1 [20]",
+              "",
+              "69.8%",
+              "",
+              "48.4% (21.4%)"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-5-7",
+          "text": "This substantial decrease directly confirms that the identified Safety Control Experts ($\\mathcal E _ { \\mathrm { c t r l } }$) play a critical and specialized role in enforcing safety alignment, specifically in generating refusal responses to harmful inputs within MoE-based LLMs.",
+          "inline_math": [
+            {
+              "latex": "\\mathcal E _ { \\mathrm { c t r l } }",
+              "start": 81,
+              "end": 100
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-2-5-8",
+          "text": "We further conduct jailbreak attack experiments to comparatively analyze the vulnerability differences between MoE and non-MoE architectures. As shown in Table 1, MoE-based models exhibit significantly greater susceptibility to jailbreak attacks. Specifically, within the Qwen3 model family, the refusal rate of the MoE version (Qwen3-30B-A3B) decreases by $48.4\\%$ under jailbreak attacks, compared to only $27.8\\%$ for the corresponding non-MoE variant. This stark contrast empirically validates and highlights the pronounced positional vulnerability and associated security fragility inherent in Mixture-of-Experts architectures.",
+          "inline_math": [
+            {
+              "latex": "48.4\\%",
+              "start": 338,
+              "end": 346
+            },
+            {
+              "latex": "27.8\\%",
+              "start": 391,
+              "end": 398
+            }
+          ],
+          "citations": []
+        }
+      ]
+    },
+    {
+      "id": "sec-3-related-work",
+      "title": "3 Related Work",
+      "level": 1,
+      "content": []
+    },
+    {
+      "id": "sec-3-1-explainable-exploration-of-llm-security-mechanisms",
+      "title": "3.1 Explainable Exploration of LLM Security Mechanisms",
+      "level": 2,
+      "content": [
+        {
+          "type": "paragraph",
+          "id": "p-3-1-1",
+          "text": "Recent years have witnessed growing attention to the safety alignment of LLMs, with leading approaches such as supervised fine-tuning (SFT) [21, 22] and reinforcement learning from human feedback (RLHF) [23–28] steering model behavior toward human intent. InstructGPT fine-tunes GPT-3 on instruction-response pairs and then applies RLHF using preference rankings, reportedly allowing a 1.3B parameter model to surpass an untuned 175B parameter GPT-3 in aspects of factuality and safety. While RLHF enhances alignment, it can induce overly cautious or evasive behavior, as annotators often reward outright refusals [24, 29, 30]. To counteract this, Constitutional AI replaces human preference labels with high-level principles and uses self-critiques to guide learning, resulting in more transparent and grounded refusals [31]. However, these methods operate largely at the output level, relying on black-box reward signals without constraints on internal representations [32]. This limits interpretability and makes it difficult to diagnose or attribute safety-related behavior. Adversarial prompts can still trigger unsafe outputs by exploiting latent vulnerabilities [33, 34, 7]. Although recent studies have begun to examine neuron-level and intermediate representations for safety alignment [35, 36], this line of research is still in its preliminary stages. In this paper, we analyze internal activation patterns to identify and characterize specific vulnerabilities related to expert utilization within contemporary MoE-based LLMs. These insights aim to advance interpretability research and inform the development of strategies for more robust safety alignment in MoE models.",
+          "inline_math": [],
+          "citations": [
+            "ref-21",
+            "ref-22",
+            "ref-23",
+            "ref-24",
+            "ref-25",
+            "ref-26",
+            "ref-27",
+            "ref-28",
+            "ref-24",
+            "ref-29",
+            "ref-30",
+            "ref-31",
+            "ref-32",
+            "ref-33",
+            "ref-34",
+            "ref-7",
+            "ref-35",
+            "ref-36"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sec-3-2-mixture-of-experts-moe-architectures",
+      "title": "3.2 Mixture-of-Experts (MoE) Architectures",
+      "level": 2,
+      "content": [
+        {
+          "type": "paragraph",
+          "id": "p-3-2-1",
+          "text": "The Mixture-of-Experts (MoE) paradigm, originally introduced by [37], has seen a resurgence as a foundational architecture in the development of large language models (LLMs) [38–41]. In MoEbased models, conventional feed-forward network (FFN) layers are replaced with collections of specialized “expert” subnetworks. A gating mechanism (often termed a \"router\") dynamically directs input tokens to a sparse subset of these experts for processing, enabling conditional computation and significantly improving parameter efficiency.",
+          "inline_math": [],
+          "citations": [
+            "ref-37",
+            "ref-38",
+            "ref-39",
+            "ref-40",
+            "ref-41"
+          ]
+        },
+        {
+          "type": "paragraph",
+          "id": "p-3-2-2",
+          "text": "Modern MoE LLMs exhibit a variety of design strategies. The Switch Transformer [42], for example, employs a top-1 gating strategy in which each token is handled by a single expert. In contrast, Mixtral-8x7B-Instruct-v0.1 [1] routes each token to two experts per layer, aiming to balance computational cost with representational richness. Further advances employ a more complex mechanism of expert sharing and routing. For example, DeepSeekMoE [17] introduces shared experts to capture global patterns, thereby avoiding excessive increases in model complexity. Subsequent iterations, such as DeepSeek-V2 [43] and V3 [44], have continued to build upon this idea. Similarly, Qwen-MoE [18] replaces all FFN layers with MoE layers composed of both shared and unshared experts.",
+          "inline_math": [],
+          "citations": [
+            "ref-42",
+            "ref-1",
+            "ref-17",
+            "ref-43",
+            "ref-44",
+            "ref-18"
+          ]
+        },
+        {
+          "type": "paragraph",
+          "id": "p-3-2-3",
+          "text": "While the MoE-based LLMs offer compelling gains in scalability and efficiency [38], they also introduce unique safety concerns: the tendency for inputs to activate specific subsets of experts can lead to specialization. This, in turn, can create a vulnerability where the model’s safety becomes critically dependent on a few experts, particularly if harmful content is consistently routed to them [6]. These related works remain nascent and primarily focus on exploiting MoE-specific architectural vulnerabilities to attack LLM models.",
+          "inline_math": [],
+          "citations": [
+            "ref-38",
+            "ref-6"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sec-4-conclusion",
+      "title": "4 Conclusion",
+      "level": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "id": "p-4-1",
+          "text": "In this paper, we presented the first systematic analysis of positional vulnerability in Mixture-ofExperts (MoE) language models. We introduced a comprehensive analytical workflow SAFEX and proposed a novel stability-based statistical selection algorithm to reliably identify safety-critical positional experts. Extensive experiments on mainstream MoE models demonstrated that intrinsic safety mechanisms heavily rely on a small subset of positional experts. Perturbing or masking these few experts significantly compromised the models’ ability to refuse harmful requests.",
+          "inline_math": [],
+          "citations": []
+        },
+        {
+          "type": "paragraph",
+          "id": "p-4-2",
+          "text": "Our findings highlight the necessity for customized, position-aware safety alignment algorithms. As future work, we plan to leverage these insights to develop targeted alignment strategies and architectural improvements tailored explicitly for mitigating positional vulnerabilities and reinforcing robust safety alignment in MoE models.",
+          "inline_math": [],
+          "citations": []
+        }
+      ]
+    },
+    {
+      "id": "sec-references",
+      "title": "References",
+      "level": 1,
+      "content": []
+    },
+    {
+      "id": "sec-a-technical-appendices-and-supplementary-material",
+      "title": "A Technical Appendices and Supplementary Material",
+      "level": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "id": "p-a-1",
+          "text": "In Appendix we provide additional data and experimental details to complement the main text. Figure 1(a) and 1(b) present two pie charts showing, respectively, the distribution of topics and the distribution of sources in the dataset $\\mathcal { D } _ { \\mathrm { R e g u l a r } }$. Figure 2 plots the layer-wise contribution frequency of the top-200 most activated experts, which were selected from each of $\\mathcal { D } _ { \\mathrm { R e g u l a r } }$, $\\mathcal { D } _ { \\mathrm { J a i l b r e a k } }$ and $\\mathcal { D } _ { \\mathrm { B e n i g n } }$, across three MoE models, and uses dashed lines to indicate the theoretical mean activation probability under each configuration. Figure 3 shows a nine-grid visualization of activation probabilities for $\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { R e g u l a r } } )$, $\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { J a i l b r e a k } } )$, and $\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { B e n i g n } } )$ across the same models, again with theoretical baselines marked. Table 1 summarizes the five MoE LLMs used (Mixtral-8x7B-Instruct-v0.1, Qwen1.5-MoE-A2.7B-Chat, Qwen3-30B-A3B, OLMoE-1B-7B-0924-Instruct, and deepseek-moe16b-chat), listing for each the number of MoE layers, total experts, Top-K routing, and active versus total parameter counts. Finally, Table 2 reports an ablation study on the use of Selective Expert Sampling (SES) for Qwen3-30B-A3B, including control-set size $| \\mathcal { E } _ { \\mathrm { c t r l } } |$, activation rates before and after masking, and the resulting jailbreak activation rate with relative drops.",
+          "inline_math": [
+            {
+              "latex": "\\mathcal { D } _ { \\mathrm { R e g u l a r } }",
+              "start": 221,
+              "end": 240
+            },
+            {
+              "latex": "\\mathcal { D } _ { \\mathrm { R e g u l a r } }",
+              "start": 361,
+              "end": 380
+            },
+            {
+              "latex": "\\mathcal { D } _ { \\mathrm { J a i l b r e a k } }",
+              "start": 382,
+              "end": 405
+            },
+            {
+              "latex": "\\mathcal { D } _ { \\mathrm { B e n i g n } }",
+              "start": 410,
+              "end": 432
+            },
+            {
+              "latex": "\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { R e g u l a r } } )",
+              "start": 599,
+              "end": 632
+            },
+            {
+              "latex": "\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { J a i l b r e a k } } )",
+              "start": 634,
+              "end": 670
+            },
+            {
+              "latex": "\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { B e n i g n } } )",
+              "start": 677,
+              "end": 710
+            },
+            {
+              "latex": "| \\mathcal { E } _ { \\mathrm { c t r l } } |",
+              "start": 1111,
+              "end": 1131
+            }
+          ],
+          "citations": []
+        },
+        {
+          "type": "figure",
+          "ref_id": "fig-5",
+          "caption": "Figure 5: Data statistics of $\\mathcal { D } _ { R e g u l a r }$.",
+          "src": "images/img_005.jpg",
+          "width": null,
+          "height": null,
+          "page_hint": null
+        },
+        {
+          "type": "table",
+          "ref_id": "tbl-2",
+          "caption": "Table 2: Basic information of MoE LLMs used in our experiments and their abbreviations in the paper.",
+          "html": "<table><tr><td>Model</td><td>#MoE layers</td><td>#Expert</td><td></td><td>Top-K #Act./Total Params</td></tr><tr><td>Mixtral-8x7B-Instruct-v0.1</td><td>32</td><td>8</td><td>2</td><td>12.9B/46.7B</td></tr><tr><td>Qwen1.5-MoE-A2.7B-Chat</td><td>24</td><td>4 shared + 60 routed</td><td>4</td><td>2.7B/14.3B</td></tr><tr><td>Qwen3-30B-A3B</td><td>48</td><td>128</td><td>8</td><td>3.3B/30.5B</td></tr><tr><td>OLMoE-1B-7B-0924-Instruct</td><td>16</td><td>64</td><td>8</td><td>1.3B/6.9B</td></tr><tr><td>deepseek-moe-16b-chat</td><td>27</td><td>2 shared + 64 routed</td><td>6</td><td>2.8B/16.4B</td></tr></table>",
+          "rows": [
+            [
+              "Model",
+              "#MoE layers",
+              "#Expert",
+              "",
+              "Top-K #Act./Total Params"
+            ],
+            [
+              "Mixtral-8x7B-Instruct-v0.1",
+              "32",
+              "8",
+              "2",
+              "12.9B/46.7B"
+            ],
+            [
+              "Qwen1.5-MoE-A2.7B-Chat",
+              "24",
+              "4 shared + 60 routed",
+              "4",
+              "2.7B/14.3B"
+            ],
+            [
+              "Qwen3-30B-A3B",
+              "48",
+              "128",
+              "8",
+              "3.3B/30.5B"
+            ],
+            [
+              "OLMoE-1B-7B-0924-Instruct",
+              "16",
+              "64",
+              "8",
+              "1.3B/6.9B"
+            ],
+            [
+              "deepseek-moe-16b-chat",
+              "27",
+              "2 shared + 64 routed",
+              "6",
+              "2.8B/16.4B"
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "ref_id": "tbl-3",
+          "caption": "Table 3: SES was incorporated into the paper to assess the activation of experts. An ablation study was also conducted to test the use of SES. The results showed significant differences in the activated experts obtained on $\\mathcal { D } _ { \\mathrm { R e g u l a r } }$, indicating a substantial impact of whether SES was used or not. Therefore, SES was utilized in the paper.",
+          "html": "<table><tr><td>Type</td><td>Model</td><td>|Ectrl|</td><td>Before Mask</td><td>After Mask</td><td> Jailbreak</td></tr><tr><td>MoE</td><td>Qwen3-30B-A3B</td><td>15</td><td>93.6%</td><td>86.6% (7.0%)</td><td>45.2% (48.4%)</td></tr></table>",
+          "rows": [
+            [
+              "Type",
+              "Model",
+              "|Ectrl|",
+              "Before Mask",
+              "After Mask",
+              "Jailbreak"
+            ],
+            [
+              "MoE",
+              "Qwen3-30B-A3B",
+              "15",
+              "93.6%",
+              "86.6% (7.0%)",
+              "45.2% (48.4%)"
+            ]
+          ]
+        },
+        {
+          "type": "figure",
+          "ref_id": "fig-6",
+          "caption": "Figure 6: Layer-wise contribution frequency of the top-200 most activated experts, selected from each of the datasets $\\mathcal { D } _ { \\mathrm { r e g u l a r } }$, $\\mathcal { D } _ { \\mathrm { j a i l b r e a k } }$, and $\\mathcal { D } _ { \\mathrm { b e n i g n } }$, across three MoE models. Dashed lines denote the theoretical mean activation probability under each MoE configuration.",
+          "src": "images/img_006.jpg",
+          "width": null,
+          "height": null,
+          "page_hint": null
+        },
+        {
+          "type": "figure",
+          "ref_id": "fig-7",
+          "caption": "Figure 7: Activation probability visualization of $\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { R e g u l a r } } )$, $\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { J a i l b r e a k } } )$, and $\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { B e n i g n } } )$ for three MoE models. Dashed lines denote the theoretical mean activation probability under each MoE configuration.",
+          "src": "images/img_007.jpg",
+          "width": null,
+          "height": null,
+          "page_hint": null
+        }
+      ]
+    }
+  ],
+  "equations": [
+    {
+      "id": "eq-1",
+      "latex": "\np ( e \\mid X ) = { \\frac { \\sum _ { i = 1 } ^ { N } \\sum _ { t = 1 } ^ { T _ { i } } \\mathbb { I } ( e _ { l , t } ^ { ( i ) } = e ) } { \\sum _ { i = 1 } ^ { N } T _ { i } } }\n",
+      "number": null,
+      "section": "sec-2-2-safety-related-expert-activation-probability-modeling"
+    },
+    {
+      "id": "eq-2",
+      "latex": "\np ( e \\mid X ^ { ( k ) } ) = { \\frac { \\sum _ { x ^ { ( i ) } \\in X ^ { ( k ) } } \\sum _ { t = 1 } ^ { T _ { i } } \\mathbb { I } ( e _ { l , t } ^ { ( i ) } = e ) } { \\sum _ { x ^ { ( i ) } \\in X ^ { ( k ) } } T _ { i } } }\n",
+      "number": null,
+      "section": "sec-2-2-safety-related-expert-activation-probability-modeling"
+    },
+    {
+      "id": "eq-3",
+      "latex": "\n\\mathcal { E } _ { \\mathrm { c t r l } } = \\mathcal { E } _ { t o p } ( \\mathcal { D } _ { R e g u l a r } ) - \\mathcal { E } _ { t o p } ( \\mathcal { D } _ { J a i l b r e a k } )\n",
+      "number": null,
+      "section": "sec-2-3-expert-functional-categorization-and-localization"
+    },
+    {
+      "id": "eq-4",
+      "latex": "\n\\hat { y } = \\sigma ( \\mathbf { W } \\times \\mathbf { h } _ { \\mathrm { i d } } ( x ) + b ) , \\quad \\hat { y } \\in \\{ 0 , 1 \\}\n",
+      "number": null,
+      "section": "sec-2-4-linear-probing-experiment-for-e_id"
+    },
+    {
+      "id": "eq-5",
+      "latex": "\n\\mathbf { h } ( \\mathbf { z } ) = \\sum _ { e \\in \\mathcal { E } } g _ { e } ( \\mathbf { z } ) \\cdot \\mathrm { F F N } _ { e } ( \\mathbf { z } ) ,\n",
+      "number": null,
+      "section": "sec-2-5-expert-masking-experiment-for-e_ctrl"
+    },
+    {
+      "id": "eq-6",
+      "latex": "\n\\mathbf { h } _ { \\mathrm { m a s k e d } } ( \\mathbf { z } ) = \\sum _ { e \\in \\mathcal { E } - \\mathcal { E } _ { \\mathrm { c t r l } } } g _ { e } ( \\mathbf { z } ) \\cdot \\mathrm { F F N } _ { e } ( \\mathbf { z } ) .\n",
+      "number": null,
+      "section": "sec-2-5-expert-masking-experiment-for-e_ctrl"
+    }
+  ],
+  "figures": [
+    {
+      "id": "fig-1",
+      "caption": "Figure 1: Positional vulnerability of MoE architecture in current LLMs. (a) Normal harmful request is successfully rejected by MoE. (b) Harmful request passed by MoE due to the masking attack. (c) Harmful request passed by MoE due to the jailbreak attack. (d) The proposed framework SAFEX enables analysis of expert activation patterns and functional roles.",
+      "src": "images/img_001.jpg",
+      "section": "sec-1-introduction"
+    },
+    {
+      "id": "fig-2",
+      "caption": "Figure 2: Overall workflow of SAFEX.",
+      "src": "images/img_002.jpg",
+      "section": "sec-2-1-dataset-construction"
+    },
+    {
+      "id": "fig-3",
+      "caption": "Figure 3: Activation probability visualization of $\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { R e g u l a r } } )$, $\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { J a i l b r e a k } } )$, and $\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { B e n i g n } } )$ for three MoE models. Dashed lines denote the theoretical mean activation probability under each MoE configuration.",
+      "src": "images/img_003.jpg",
+      "section": "sec-2-2-safety-related-expert-activation-probability-modeling"
+    },
+    {
+      "id": "fig-4",
+      "caption": "Figure 4: Performance comparison of linear probes trained on safety-relevant experts from $\\mathcal { E } _ { \\mathrm { i d } }$ versus randomly selected experts. Box plots illustrate accuracy, precision, recall, and F1-score metrics across different model architectures. Results consistently show superior performance of linear probes based on experts identified within $\\mathcal { E } _ { \\mathrm { i d } }$ , indicating these experts encode specialized features related to safety-sensitive content identification.",
+      "src": "images/img_004.jpg",
+      "section": "sec-2-4-linear-probing-experiment-for-e_id"
+    },
+    {
+      "id": "fig-5",
+      "caption": "Figure 5: Data statistics of $\\mathcal { D } _ { R e g u l a r }$.",
+      "src": "images/img_005.jpg",
+      "section": "sec-a-technical-appendices-and-supplementary-material"
+    },
+    {
+      "id": "fig-6",
+      "caption": "Figure 6: Layer-wise contribution frequency of the top-200 most activated experts, selected from each of the datasets $\\mathcal { D } _ { \\mathrm { r e g u l a r } }$, $\\mathcal { D } _ { \\mathrm { j a i l b r e a k } }$, and $\\mathcal { D } _ { \\mathrm { b e n i g n } }$, across three MoE models. Dashed lines denote the theoretical mean activation probability under each MoE configuration.",
+      "src": "images/img_006.jpg",
+      "section": "sec-a-technical-appendices-and-supplementary-material"
+    },
+    {
+      "id": "fig-7",
+      "caption": "Figure 7: Activation probability visualization of $\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { R e g u l a r } } )$, $\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { J a i l b r e a k } } )$, and $\\mathcal { E } _ { \\mathrm { t o p } } ( \\mathcal { D } _ { \\mathrm { B e n i g n } } )$ for three MoE models. Dashed lines denote the theoretical mean activation probability under each MoE configuration.",
+      "src": "images/img_007.jpg",
+      "section": "sec-a-technical-appendices-and-supplementary-material"
+    }
+  ],
+  "tables": [
+    {
+      "id": "tbl-1",
+      "caption": "Table 1: Comparison of refusal rates before and after masking safety-control experts.",
+      "rows": [
+        [
+          "Type",
+          "Model",
+          "|Ectrl|",
+          "Before Mask",
+          "After Mask",
+          "Jailbreak"
+        ],
+        [
+          "MoE",
+          "Qwen3-30B-A3B [3]",
+          "12",
+          "93.6%",
+          "71.6% (22.0%)",
+          "45.2% (48.4%)"
+        ],
+        [
+          "MoE",
+          "Qwen1.5-MoE-A2.7B-Chat [18]",
+          "5",
+          "87.4%",
+          "65.0% (22.4%)",
+          "52.0% (35.4%)"
+        ],
+        [
+          "MoE",
+          "Deepseek-moe-16b-chat [17]",
+          "5",
+          "85.2%",
+          "64.4% (20.8%)",
+          "52.4% (32.8%)"
+        ],
+        [
+          "MoE",
+          "Mixtral-8x7B-Instruct-v0.1 [1]",
+          "2",
+          "70.8%",
+          "51.2% (19.6%)",
+          "47.0% (23.8%)"
+        ],
+        [
+          "Dense",
+          "Qwen3-32B-Instruct [3]",
+          "",
+          "92.6%",
+          "",
+          "64.8% (27.8%)"
+        ],
+        [
+          "Dense",
+          "Qwen1.5-32B-Chat [19]",
+          "",
+          "88.0%",
+          "",
+          "54.8% (33.2%)"
+        ],
+        [
+          "Dense",
+          "Mistral-7B-v0.1 [20]",
+          "",
+          "69.8%",
+          "",
+          "48.4% (21.4%)"
+        ]
+      ],
+      "section": "sec-2-5-expert-masking-experiment-for-e_ctrl"
+    },
+    {
+      "id": "tbl-2",
+      "caption": "Table 2: Basic information of MoE LLMs used in our experiments and their abbreviations in the paper.",
+      "rows": [
+        [
+          "Model",
+          "#MoE layers",
+          "#Expert",
+          "",
+          "Top-K #Act./Total Params"
+        ],
+        [
+          "Mixtral-8x7B-Instruct-v0.1",
+          "32",
+          "8",
+          "2",
+          "12.9B/46.7B"
+        ],
+        [
+          "Qwen1.5-MoE-A2.7B-Chat",
+          "24",
+          "4 shared + 60 routed",
+          "4",
+          "2.7B/14.3B"
+        ],
+        [
+          "Qwen3-30B-A3B",
+          "48",
+          "128",
+          "8",
+          "3.3B/30.5B"
+        ],
+        [
+          "OLMoE-1B-7B-0924-Instruct",
+          "16",
+          "64",
+          "8",
+          "1.3B/6.9B"
+        ],
+        [
+          "deepseek-moe-16b-chat",
+          "27",
+          "2 shared + 64 routed",
+          "6",
+          "2.8B/16.4B"
+        ]
+      ],
+      "section": "sec-a-technical-appendices-and-supplementary-material"
+    },
+    {
+      "id": "tbl-3",
+      "caption": "Table 3: SES was incorporated into the paper to assess the activation of experts. An ablation study was also conducted to test the use of SES. The results showed significant differences in the activated experts obtained on $\\mathcal { D } _ { \\mathrm { R e g u l a r } }$, indicating a substantial impact of whether SES was used or not. Therefore, SES was utilized in the paper.",
+      "rows": [
+        [
+          "Type",
+          "Model",
+          "|Ectrl|",
+          "Before Mask",
+          "After Mask",
+          "Jailbreak"
+        ],
+        [
+          "MoE",
+          "Qwen3-30B-A3B",
+          "15",
+          "93.6%",
+          "86.6% (7.0%)",
+          "45.2% (48.4%)"
+        ]
+      ],
+      "section": "sec-a-technical-appendices-and-supplementary-material"
+    }
+  ],
+  "citations": [],
+  "references": [
+    {
+      "id": "ref-1",
+      "text": "[1] Albert Q Jiang, Alexandre Sablayrolles, Antoine Roux, Arthur Mensch, Blanche Savary, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Emma Bou Hanna, Florian Bressand, et al. Mixtral of experts. arXiv preprint arXiv:2401.04088, 2024.",
+      "title": "Mixtral of experts",
+      "authors": [
+        "Albert Q Jiang",
+        "Alexandre Sablayrolles",
+        "Antoine Roux",
+        "Arthur Mensch",
+        "Blanche Savary",
+        "Chris Bamford",
+        "Devendra Singh Chaplot",
+        "Diego de las Casas",
+        "Emma Bou Hanna",
+        "Florian Bressand",
+        "et al."
+      ],
+      "venue": "arXiv preprint arXiv:2401.04088",
+      "year": 2024,
+      "doi": null,
+      "arxiv": "2401.04088",
+      "url": null
+    },
+    {
+      "id": "ref-2",
+      "text": "[2] Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu, Shirong Ma, Peiyi Wang, Xiao Bi, et al. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948, 2025.",
+      "title": "Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning",
+      "authors": [
+        "Daya Guo",
+        "Dejian Yang",
+        "Haowei Zhang",
+        "Junxiao Song",
+        "Ruoyu Zhang",
+        "Runxin Xu",
+        "Qihao Zhu",
+        "Shirong Ma",
+        "Peiyi Wang",
+        "Xiao Bi",
+        "et al."
+      ],
+      "venue": "arXiv preprint arXiv:2501.12948",
+      "year": 2025,
+      "doi": null,
+      "arxiv": "2501.12948",
+      "url": null
+    },
+    {
+      "id": "ref-3",
+      "text": "[3] Qwen Team. Qwen technical report. https://qwenlm.github.io/zh/blog/qwen3/, 2025. URL https://qwenlm.github.io/zh/blog/qwen3/. Accessed: [2025-05010].",
+      "title": "Qwen technical report",
+      "authors": [
+        "Qwen Team"
+      ],
+      "venue": null,
+      "year": 2025,
+      "doi": null,
+      "arxiv": null,
+      "url": "https://qwenlm.github.io/zh/blog/qwen3/"
+    },
+    {
+      "id": "ref-4",
+      "text": "[4] Jamie Hayes, Ilia Shumailov, and Itay Yona. Buffer overflow in mixture of experts. arXiv preprint arXiv:2402.05526, 2024.",
+      "title": "Buffer overflow in mixture of experts",
+      "authors": [
+        "Jamie Hayes",
+        "Ilia Shumailov",
+        "Itay Yona"
+      ],
+      "venue": "arXiv preprint arXiv:2402.05526",
+      "year": 2024,
+      "doi": null,
+      "arxiv": "2402.05526",
+      "url": null
+    },
+    {
+      "id": "ref-5",
+      "text": "[5] Itay Yona, Ilia Shumailov, Jamie Hayes, and Nicholas Carlini. Stealing user prompts from mixture of experts. arXiv preprint arXiv:2410.22884, 2024.",
+      "title": "Stealing user prompts from mixture of experts",
+      "authors": [
+        "Itay Yona",
+        "Ilia Shumailov",
+        "Jamie Hayes",
+        "Nicholas Carlini"
+      ],
+      "venue": "arXiv preprint arXiv:2410.22884",
+      "year": 2024,
+      "doi": null,
+      "arxiv": "2410.22884",
+      "url": null
+    },
+    {
+      "id": "ref-6",
+      "text": "[6] Qingyue Wang, Qi Pang, Xixun Lin, Shuai Wang, and Daoyuan Wu. Badmoe: Backdooring mixture-of-experts llms via optimizing routing triggers and infecting dormant experts. arXiv preprint arXiv:2504.18598, 2025.",
+      "title": "Badmoe: Backdooring mixture-of-experts llms via optimizing routing triggers and infecting dormant experts",
+      "authors": [
+        "Qingyue Wang",
+        "Qi Pang",
+        "Xixun Lin",
+        "Shuai Wang",
+        "Daoyuan Wu"
+      ],
+      "venue": "arXiv preprint arXiv:2504.18598",
+      "year": 2025,
+      "doi": null,
+      "arxiv": "2504.18598",
+      "url": null
+    },
+    {
+      "id": "ref-7",
+      "text": "[7] Andy Zou, Zifan Wang, Nicholas Carlini, Milad Nasr, J Zico Kolter, and Matt Fredrikson. Universal and transferable adversarial attacks on aligned language models. arXiv preprint arXiv:2307.15043, 2023.",
+      "title": "Universal and transferable adversarial attacks on aligned language models",
+      "authors": [
+        "Andy Zou",
+        "Zifan Wang",
+        "Nicholas Carlini",
+        "Milad Nasr",
+        "J Zico Kolter",
+        "Matt Fredrikson"
+      ],
+      "venue": "arXiv preprint arXiv:2307.15043",
+      "year": 2023,
+      "doi": null,
+      "arxiv": "2307.15043",
+      "url": null
+    },
+    {
+      "id": "ref-8",
+      "text": "[8] Joshua Kazdan, Lisa Yu, Rylan Schaeffer, Chris Cundy, Sanmi Koyejo, and Krishnamurthy Dvijotham. No, of course i can! refusal mechanisms can be exploited using harmless fine-tuning data. arXiv preprint arXiv:2502.19537, 2025.",
+      "title": "No, of course i can! refusal mechanisms can be exploited using harmless fine-tuning data",
+      "authors": [
+        "Joshua Kazdan",
+        "Lisa Yu",
+        "Rylan Schaeffer",
+        "Chris Cundy",
+        "Sanmi Koyejo",
+        "Krishnamurthy Dvijotham"
+      ],
+      "venue": "arXiv preprint arXiv:2502.19537",
+      "year": 2025,
+      "doi": null,
+      "arxiv": "2502.19537",
+      "url": null
+    },
+    {
+      "id": "ref-9",
+      "text": "[9] Martin Kuo, Jianyi Zhang, Aolin Ding, Qinsi Wang, Louis DiValentin, Yujia Bao, Wei Wei, Hai Li, and Yiran Chen. H-cot: Hijacking the chain-of-thought safety reasoning mechanism to jailbreak large reasoning models, including openai o1/o3, deepseek-r1, and gemini 2.0 flash thinking. arXiv preprint arXiv:2502.12893, 2025.",
+      "title": "H-cot: Hijacking the chain-of-thought safety reasoning mechanism to jailbreak large reasoning models, including openai o1/o3, deepseek-r1, and gemini 2.0 flash thinking",
+      "authors": [
+        "Martin Kuo",
+        "Jianyi Zhang",
+        "Aolin Ding",
+        "Qinsi Wang",
+        "Louis DiValentin",
+        "Yujia Bao",
+        "Wei Wei",
+        "Hai Li",
+        "Yiran Chen"
+      ],
+      "venue": "arXiv preprint arXiv:2502.12893",
+      "year": 2025,
+      "doi": null,
+      "arxiv": "2502.12893",
+      "url": null
+    },
+    {
+      "id": "ref-10",
+      "text": "[10] Nicolai Meinshausen and Peter Bühlmann. Stability selection. Journal of the Royal Statistical Society Series B: Statistical Methodology, 72(4):417–473, 2010.",
+      "title": "Stability selection",
+      "authors": [
+        "Nicolai Meinshausen",
+        "Peter Bühlmann"
+      ],
+      "venue": "Journal of the Royal Statistical Society Series B: Statistical Methodology",
+      "year": 2010,
+      "doi": null,
+      "arxiv": null,
+      "url": null
+    },
+    {
+      "id": "ref-11",
+      "text": "[11] Todor Markov, Chong Zhang, Sandhini Agarwal, Florentine Eloundou Nekoul, Theodore Lee, Steven Adler, Angela Jiang, and Lilian Weng. A holistic approach to undesired content detection in the real world. In Proceedings of the AAAI Conference on Artificial Intelligence, volume 37, pages 15009–15018, 2023.",
+      "title": "A holistic approach to undesired content detection in the real world",
+      "authors": [
+        "Todor Markov",
+        "Chong Zhang",
+        "Sandhini Agarwal",
+        "Florentine Eloundou Nekoul",
+        "Theodore Lee",
+        "Steven Adler",
+        "Angela Jiang",
+        "Lilian Weng"
+      ],
+      "venue": "In Proceedings of the AAAI Conference on Artificial Intelligence",
+      "year": 2023,
+      "doi": null,
+      "arxiv": null,
+      "url": null
+    },
+    {
+      "id": "ref-12",
+      "text": "[12] Shaona Ghosh, Prasoon Varshney, Makesh Narsimhan Sreedhar, Aishwarya Padmakumar, Traian Rebedea, Jibin Rajan Varghese, and Christopher Parisien. Aegis2. 0: A diverse ai safety dataset and risks taxonomy for alignment of llm guardrails. arXiv preprint arXiv:2501.09004, 2025.",
+      "title": "Aegis2. 0: A diverse ai safety dataset and risks taxonomy for alignment of llm guardrails",
+      "authors": [
+        "Shaona Ghosh",
+        "Prasoon Varshney",
+        "Makesh Narsimhan Sreedhar",
+        "Aishwarya Padmakumar",
+        "Traian Rebedea",
+        "Jibin Rajan Varghese",
+        "Christopher Parisien"
+      ],
+      "venue": "arXiv preprint arXiv:2501.09004",
+      "year": 2025,
+      "doi": null,
+      "arxiv": "2501.09004",
+      "url": null
+    },
+    {
+      "id": "ref-13",
+      "text": "[13] Bertie Vidgen, Nino Scherrer, Hannah Rose Kirk, Rebecca Qian, Anand Kannappan, Scott A Hale, and Paul Röttger. Simplesafetytests: a test suite for identifying critical safety risks in large language models. arXiv preprint arXiv:2311.08370, 2023.",
+      "title": "Simplesafetytests: a test suite for identifying critical safety risks in large language models",
+      "authors": [
+        "Bertie Vidgen",
+        "Nino Scherrer",
+        "Hannah Rose Kirk",
+        "Rebecca Qian",
+        "Anand Kannappan",
+        "Scott A Hale",
+        "Paul Röttger"
+      ],
+      "venue": "arXiv preprint arXiv:2311.08370",
+      "year": 2023,
+      "doi": null,
+      "arxiv": "2311.08370",
+      "url": null
+    },
+    {
+      "id": "ref-14",
+      "text": "[14] Mantas Mazeika, Long Phan, Xuwang Yin, Andy Zou, Zifan Wang, Norman Mu, Elham Sakhaee, Nathaniel Li, Steven Basart, Bo Li, et al. Harmbench: A standardized evaluation framework for automated red teaming and robust refusal. arXiv preprint arXiv:2402.04249, 2024.",
+      "title": "Harmbench: A standardized evaluation framework for automated red teaming and robust refusal",
+      "authors": [
+        "Mantas Mazeika",
+        "Long Phan",
+        "Xuwang Yin",
+        "Andy Zou",
+        "Zifan Wang",
+        "Norman Mu",
+        "Elham Sakhaee",
+        "Nathaniel Li",
+        "Steven Basart",
+        "Bo Li",
+        "et al."
+      ],
+      "venue": "arXiv preprint arXiv:2402.04249",
+      "year": 2024,
+      "doi": null,
+      "arxiv": "2402.04249",
+      "url": null
+    },
+    {
+      "id": "ref-15",
+      "text": "[15] Seungju Han, Kavel Rao, Allyson Ettinger, Liwei Jiang, Bill Yuchen Lin, Nathan Lambert, Yejin Choi, and Nouha Dziri. Wildguard: Open one-stop moderation tools for safety risks, jailbreaks, and refusals of llms. arXiv preprint arXiv:2406.18495, 2024.",
+      "title": "Wildguard: Open one-stop moderation tools for safety risks, jailbreaks, and refusals of llms",
+      "authors": [
+        "Seungju Han",
+        "Kavel Rao",
+        "Allyson Ettinger",
+        "Liwei Jiang",
+        "Bill Yuchen Lin",
+        "Nathan Lambert",
+        "Yejin Choi",
+        "Nouha Dziri"
+      ],
+      "venue": "arXiv preprint arXiv:2406.18495",
+      "year": 2024,
+      "doi": null,
+      "arxiv": "2406.18495",
+      "url": null
+    },
+    {
+      "id": "ref-16",
+      "text": "[16] Xiaoxia Li, Siyuan Liang, Jiyi Zhang, Han Fang, Aishan Liu, and Ee-Chien Chang. Semantic mirror jailbreak: Genetic algorithm based jailbreak prompts against open-source llms. arXiv preprint arXiv:2402.14872, 2024.",
+      "title": "Semantic mirror jailbreak: Genetic algorithm based jailbreak prompts against open-source llms",
+      "authors": [
+        "Xiaoxia Li",
+        "Siyuan Liang",
+        "Jiyi Zhang",
+        "Han Fang",
+        "Aishan Liu",
+        "Ee-Chien Chang"
+      ],
+      "venue": "arXiv preprint arXiv:2402.14872",
+      "year": 2024,
+      "doi": null,
+      "arxiv": "2402.14872",
+      "url": null
+    },
+    {
+      "id": "ref-17",
+      "text": "[17] Damai Dai, Chengqi Deng, Chenggang Zhao, R. X. Xu, Huazuo Gao, Deli Chen, Jiashi Li, Wangding Zeng, Xingkai Yu, Y. Wu, Zhenda Xie, Y. K. Li, Panpan Huang, Fuli Luo, Chong Ruan, Zhifang Sui, and Wenfeng Liang. Deepseekmoe: Towards ultimate expert specialization in mixture-of-experts language models, 2024. URL https://arxiv.org/abs/2401.06066.",
+      "title": "Deepseekmoe: Towards ultimate expert specialization in mixture-of-experts language models",
+      "authors": [
+        "Damai Dai",
+        "Chengqi Deng",
+        "Chenggang Zhao",
+        "R. X. Xu",
+        "Huazuo Gao",
+        "Deli Chen",
+        "Jiashi Li",
+        "Wangding Zeng",
+        "Xingkai Yu",
+        "Y. Wu",
+        "Zhenda Xie",
+        "Y. K. Li",
+        "Panpan Huang",
+        "Fuli Luo",
+        "Chong Ruan",
+        "Zhifang Sui",
+        "Wenfeng Liang"
+      ],
+      "venue": null,
+      "year": 2024,
+      "doi": null,
+      "arxiv": "2401.06066",
+      "url": "https://arxiv.org/abs/2401.06066"
+    },
+    {
+      "id": "ref-18",
+      "text": "[18] Qwen Team. Qwen1.5-moe: Matching 7b model performance with 1/3 activated parameters, February 2024. URL https://qwenlm.github.io/blog/qwen-moe/.",
+      "title": "Qwen1.5-moe: Matching 7b model performance with 1/3 activated parameters",
+      "authors": [
+        "Qwen Team"
+      ],
+      "venue": null,
+      "year": 2024,
+      "doi": null,
+      "arxiv": null,
+      "url": "https://qwenlm.github.io/blog/qwen-moe/"
+    },
+    {
+      "id": "ref-19",
+      "text": "[19] Qwen Team. Introducing qwen1.5, February 2024. URL https://qwenlm.github.io/ blog/qwen1.5/.",
+      "title": "Introducing qwen1.5",
+      "authors": [
+        "Qwen Team"
+      ],
+      "venue": null,
+      "year": 2024,
+      "doi": null,
+      "arxiv": null,
+      "url": "https://qwenlm.github.io/blog/qwen1.5/"
+    },
+    {
+      "id": "ref-20",
+      "text": "[20] Albert Q. Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, Lélio Renard Lavaud, Marie-Anne Lachaux, Pierre Stock, Teven Le Scao, Thibaut Lavril, Thomas Wang, Timothée Lacroix, and William El Sayed. Mistral 7b, 2023. URL https://arxiv.org/abs/2310.06825.",
+      "title": "Mistral 7b",
+      "authors": [
+        "Albert Q. Jiang",
+        "Alexandre Sablayrolles",
+        "Arthur Mensch",
+        "Chris Bamford",
+        "Devendra Singh Chaplot",
+        "Diego de las Casas",
+        "Florian Bressand",
+        "Gianna Lengyel",
+        "Guillaume Lample",
+        "Lucile Saulnier",
+        "Lélio Renard Lavaud",
+        "Marie-Anne Lachaux",
+        "Pierre Stock",
+        "Teven Le Scao",
+        "Thibaut Lavril",
+        "Thomas Wang",
+        "Timothée Lacroix",
+        "William El Sayed"
+      ],
+      "venue": null,
+      "year": 2023,
+      "doi": null,
+      "arxiv": "2310.06825",
+      "url": "https://arxiv.org/abs/2310.06825"
+    },
+    {
+      "id": "ref-21",
+      "text": "[21] Jason Wei, Maarten Bosma, Vincent Y Zhao, Kelvin Guu, Adams Wei Yu, Brian Lester, Nan Du, Andrew M Dai, and Quoc V Le. Finetuned language models are zero-shot learners. arXiv preprint arXiv:2109.01652, 2021.",
+      "title": "Finetuned language models are zero-shot learners",
+      "authors": [
+        "Jason Wei",
+        "Maarten Bosma",
+        "Vincent Y Zhao",
+        "Kelvin Guu",
+        "Adams Wei Yu",
+        "Brian Lester",
+        "Nan Du",
+        "Andrew M Dai",
+        "Quoc V Le"
+      ],
+      "venue": "arXiv preprint arXiv:2109.01652",
+      "year": 2021,
+      "doi": null,
+      "arxiv": "2109.01652",
+      "url": null
+    },
+    {
+      "id": "ref-22",
+      "text": "[22] Hyung Won Chung, Le Hou, Shayne Longpre, Barret Zoph, Yi Tay, William Fedus, Yunxuan Li, Xuezhi Wang, Mostafa Dehghani, Siddhartha Brahma, et al. Scaling instruction-finetuned language models. Journal of Machine Learning Research, 25(70):1–53, 2024.",
+      "title": "Scaling instruction-finetuned language models",
+      "authors": [
+        "Hyung Won Chung",
+        "Le Hou",
+        "Shayne Longpre",
+        "Barret Zoph",
+        "Yi Tay",
+        "William Fedus",
+        "Yunxuan Li",
+        "Xuezhi Wang",
+        "Mostafa Dehghani",
+        "Siddhartha Brahma",
+        "et al."
+      ],
+      "venue": "Journal of Machine Learning Research",
+      "year": 2024,
+      "doi": null,
+      "arxiv": null,
+      "url": null
+    },
+    {
+      "id": "ref-23",
+      "text": "[23] Nisan Stiennon, Long Ouyang, Jeff Wu, Daniel M. Ziegler, Ryan Lowe, Chelsea Voss, Alec Radford, Dario Amodei, and Paul Christiano. Learning to summarize from human feedback, 2022. URL https://arxiv.org/abs/2009.01325.",
+      "title": "Learning to summarize from human feedback",
+      "authors": [
+        "Nisan Stiennon",
+        "Long Ouyang",
+        "Jeff Wu",
+        "Daniel M. Ziegler",
+        "Ryan Lowe",
+        "Chelsea Voss",
+        "Alec Radford",
+        "Dario Amodei",
+        "Paul Christiano"
+      ],
+      "venue": null,
+      "year": 2022,
+      "doi": null,
+      "arxiv": "2009.01325",
+      "url": "https://arxiv.org/abs/2009.01325"
+    },
+    {
+      "id": "ref-24",
+      "text": "[24] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow instructions with human feedback. Advances in neural information processing systems, 35:27730–27744, 2022.",
+      "title": "Training language models to follow instructions with human feedback",
+      "authors": [
+        "Long Ouyang",
+        "Jeffrey Wu",
+        "Xu Jiang",
+        "Diogo Almeida",
+        "Carroll Wainwright",
+        "Pamela Mishkin",
+        "Chong Zhang",
+        "Sandhini Agarwal",
+        "Katarina Slama",
+        "Alex Ray",
+        "et al."
+      ],
+      "venue": "Advances in neural information processing systems",
+      "year": 2022,
+      "doi": null,
+      "arxiv": null,
+      "url": null
+    },
+    {
+      "id": "ref-25",
+      "text": "[25] Jiaming Ji, Mickel Liu, Josef Dai, Xuehai Pan, Chi Zhang, Ce Bian, Boyuan Chen, Ruiyang Sun, Yizhou Wang, and Yaodong Yang. Beavertails: Towards improved safety alignment of llm via a human-preference dataset. Advances in Neural Information Processing Systems, 36: 24678–24704, 2023.",
+      "title": "Beavertails: Towards improved safety alignment of llm via a human-preference dataset",
+      "authors": [
+        "Jiaming Ji",
+        "Mickel Liu",
+        "Josef Dai",
+        "Xuehai Pan",
+        "Chi Zhang",
+        "Ce Bian",
+        "Boyuan Chen",
+        "Ruiyang Sun",
+        "Yizhou Wang",
+        "Yaodong Yang"
+      ],
+      "venue": "Advances in Neural Information Processing Systems",
+      "year": 2023,
+      "doi": null,
+      "arxiv": null,
+      "url": null
+    },
+    {
+      "id": "ref-26",
+      "text": "[26] Josef Dai, Xuehai Pan, Ruiyang Sun, Jiaming Ji, Xinbo Xu, Mickel Liu, Yizhou Wang, and Yaodong Yang. Safe rlhf: Safe reinforcement learning from human feedback. arXiv preprint arXiv:2310.12773, 2023.",
+      "title": "Safe rlhf: Safe reinforcement learning from human feedback",
+      "authors": [
+        "Josef Dai",
+        "Xuehai Pan",
+        "Ruiyang Sun",
+        "Jiaming Ji",
+        "Xinbo Xu",
+        "Mickel Liu",
+        "Yizhou Wang",
+        "Yaodong Yang"
+      ],
+      "venue": "arXiv preprint arXiv:2310.12773",
+      "year": 2023,
+      "doi": null,
+      "arxiv": "2310.12773",
+      "url": null
+    },
+    {
+      "id": "ref-27",
+      "text": "[27] Amanda Askell, Yuntao Bai, Anna Chen, Dawn Drain, Deep Ganguli, Tom Henighan, Andy Jones, Nicholas Joseph, Ben Mann, Nova DasSarma, et al. A general language assistant as a laboratory for alignment. arXiv preprint arXiv:2112.00861, 2021.",
+      "title": "A general language assistant as a laboratory for alignment",
+      "authors": [
+        "Amanda Askell",
+        "Yuntao Bai",
+        "Anna Chen",
+        "Dawn Drain",
+        "Deep Ganguli",
+        "Tom Henighan",
+        "Andy Jones",
+        "Nicholas Joseph",
+        "Ben Mann",
+        "Nova DasSarma",
+        "et al."
+      ],
+      "venue": "arXiv preprint arXiv:2112.00861",
+      "year": 2021,
+      "doi": null,
+      "arxiv": "2112.00861",
+      "url": null
+    },
+    {
+      "id": "ref-28",
+      "text": "[28] Amelia Glaese, Nat McAleese, Maja Tr˛ebacz, John Aslanides, Vlad Firoiu, Timo Ewalds, Maribeth Rauh, Laura Weidinger, Martin Chadwick, Phoebe Thacker, et al. Improving alignment of dialogue agents via targeted human judgements. arXiv preprint arXiv:2209.14375, 2022.",
+      "title": "Improving alignment of dialogue agents via targeted human judgements",
+      "authors": [
+        "Amelia Glaese",
+        "Nat McAleese",
+        "Maja Tr˛ebacz",
+        "John Aslanides",
+        "Vlad Firoiu",
+        "Timo Ewalds",
+        "Maribeth Rauh",
+        "Laura Weidinger",
+        "Martin Chadwick",
+        "Phoebe Thacker",
+        "et al."
+      ],
+      "venue": "arXiv preprint arXiv:2209.14375",
+      "year": 2022,
+      "doi": null,
+      "arxiv": "2209.14375",
+      "url": null
+    },
+    {
+      "id": "ref-29",
+      "text": "[29] Yuntao Bai, Saurav Kadavath, Amanda Askell, et al. Training a helpful and harmless assistant with rlhf. arXiv preprint arXiv:2204.05862, 2022.",
+      "title": "Training a helpful and harmless assistant with rlhf",
+      "authors": [
+        "Yuntao Bai",
+        "Saurav Kadavath",
+        "Amanda Askell",
+        "et al."
+      ],
+      "venue": "arXiv preprint arXiv:2204.05862",
+      "year": 2022,
+      "doi": null,
+      "arxiv": "2204.05862",
+      "url": null
+    },
+    {
+      "id": "ref-30",
+      "text": "[30] Wuyuao Mai, Geng Hong, Pei Chen, Xudong Pan, Baojun Liu, Yuan Zhang, Haixin Duan, and Min Yang. You can’t eat your cake and have it too: The performance degradation of llms with jailbreak defense. In Proceedings of the ACM on Web Conference 2025, pages 872–883, 2025.",
+      "title": "You can’t eat your cake and have it too: The performance degradation of llms with jailbreak defense",
+      "authors": [
+        "Wuyuao Mai",
+        "Geng Hong",
+        "Pei Chen",
+        "Xudong Pan",
+        "Baojun Liu",
+        "Yuan Zhang",
+        "Haixin Duan",
+        "Min Yang"
+      ],
+      "venue": "In Proceedings of the ACM on Web Conference 2025",
+      "year": 2025,
+      "doi": null,
+      "arxiv": null,
+      "url": null
+    },
+    {
+      "id": "ref-31",
+      "text": "[31] Yuntao Bai, Saurav Kadavath, Sandipan Kundu, Amanda Askell, Jackson Kernion, Andy Jones, Anna Chen, Anna Goldie, Azalia Mirhoseini, Cameron McKinnon, et al. Constitutional ai: Harmlessness from ai feedback. arXiv preprint arXiv:2212.08073, 2022.",
+      "title": "Constitutional ai: Harmlessness from ai feedback",
+      "authors": [
+        "Yuntao Bai",
+        "Saurav Kadavath",
+        "Sandipan Kundu",
+        "Amanda Askell",
+        "Jackson Kernion",
+        "Andy Jones",
+        "Anna Chen",
+        "Anna Goldie",
+        "Azalia Mirhoseini",
+        "Cameron McKinnon",
+        "et al."
+      ],
+      "venue": "arXiv preprint arXiv:2212.08073",
+      "year": 2022,
+      "doi": null,
+      "arxiv": "2212.08073",
+      "url": null
+    },
+    {
+      "id": "ref-32",
+      "text": "[32] Alexander von Recum, Christoph Schnabl, Gabor Hollbeck, Silas Alberti, Philip Blinde, and Marvin von Hagen. Cannot or should not? automatic analysis of refusal composition in ift/rlhf datasets and refusal behavior of black-box llms. arXiv preprint arXiv:2412.16974, 2024.",
+      "title": "Cannot or should not? automatic analysis of refusal composition in ift/rlhf datasets and refusal behavior of black-box llms",
+      "authors": [
+        "Alexander von Recum",
+        "Christoph Schnabl",
+        "Gabor Hollbeck",
+        "Silas Alberti",
+        "Philip Blinde",
+        "Marvin von Hagen"
+      ],
+      "venue": "arXiv preprint arXiv:2412.16974",
+      "year": 2024,
+      "doi": null,
+      "arxiv": "2412.16974",
+      "url": null
+    },
+    {
+      "id": "ref-33",
+      "text": "[33] Xiaogeng Liu, Nan Xu, Muhao Chen, and Chaowei Xiao. Autodan: Generating stealthy jailbreak prompts on aligned large language models. arXiv preprint arXiv:2310.04451, 2023.",
+      "title": "Autodan: Generating stealthy jailbreak prompts on aligned large language models",
+      "authors": [
+        "Xiaogeng Liu",
+        "Nan Xu",
+        "Muhao Chen",
+        "Chaowei Xiao"
+      ],
+      "venue": "arXiv preprint arXiv:2310.04451",
+      "year": 2023,
+      "doi": null,
+      "arxiv": "2310.04451",
+      "url": null
+    },
+    {
+      "id": "ref-34",
+      "text": "[34] Xinyue Shen, Zeyuan Chen, Michael Backes, Yun Shen, and Yang Zhang. \" do anything now\": Characterizing and evaluating in-the-wild jailbreak prompts on large language models. In Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security, pages 1671–1685, 2024.",
+      "title": "\" do anything now\": Characterizing and evaluating in-the-wild jailbreak prompts on large language models",
+      "authors": [
+        "Xinyue Shen",
+        "Zeyuan Chen",
+        "Michael Backes",
+        "Yun Shen",
+        "Yang Zhang"
+      ],
+      "venue": "In Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security",
+      "year": 2024,
+      "doi": null,
+      "arxiv": null,
+      "url": null
+    },
+    {
+      "id": "ref-35",
+      "text": "[35] Jianwei Li and Jung-Eun Kim. Safety alignment shouldn’t be complicated, 2025. URL https://openreview.net/forum?id=9H91juqfgb.",
+      "title": "Safety alignment shouldn’t be complicated",
+      "authors": [
+        "Jianwei Li",
+        "Jung-Eun Kim"
+      ],
+      "venue": null,
+      "year": 2025,
+      "doi": null,
+      "arxiv": null,
+      "url": "https://openreview.net/forum?id=9H91juqfgb"
+    },
+    {
+      "id": "ref-36",
+      "text": "[36] Xin Yi, Shunfan Zheng, Linlin Wang, Gerard de Melo, Xiaoling Wang, and Liang He. Nlsr: Neuron-level safety realignment of large language models against harmful fine-tuning. In Proceedings of the AAAI Conference on Artificial Intelligence, volume 39, pages 25706–25714, 2025.",
+      "title": "Nlsr: Neuron-level safety realignment of large language models against harmful fine-tuning",
+      "authors": [
+        "Xin Yi",
+        "Shunfan Zheng",
+        "Linlin Wang",
+        "Gerard de Melo",
+        "Xiaoling Wang",
+        "Liang He"
+      ],
+      "venue": "In Proceedings of the AAAI Conference on Artificial Intelligence",
+      "year": 2025,
+      "doi": null,
+      "arxiv": null,
+      "url": null
+    },
+    {
+      "id": "ref-37",
+      "text": "[37] Robert A Jacobs, Michael I Jordan, Steven J Nowlan, and Geoffrey E Hinton. Adaptive mixtures of local experts. Neural computation, 3(1):79–87, 1991.",
+      "title": "Adaptive mixtures of local experts",
+      "authors": [
+        "Robert A Jacobs",
+        "Michael I Jordan",
+        "Steven J Nowlan",
+        "Geoffrey E Hinton"
+      ],
+      "venue": "Neural computation",
+      "year": 1991,
+      "doi": null,
+      "arxiv": null,
+      "url": null
+    },
+    {
+      "id": "ref-38",
+      "text": "[38] Weilin Cai, Juyong Jiang, Fan Wang, Jing Tang, Sunghun Kim, and Jiayi Huang. A survey on mixture of experts. arXiv preprint arXiv:2407.06204, 2024.",
+      "title": "A survey on mixture of experts",
+      "authors": [
+        "Weilin Cai",
+        "Juyong Jiang",
+        "Fan Wang",
+        "Jing Tang",
+        "Sunghun Kim",
+        "Jiayi Huang"
+      ],
+      "venue": "arXiv preprint arXiv:2407.06204",
+      "year": 2024,
+      "doi": null,
+      "arxiv": "2407.06204",
+      "url": null
+    },
+    {
+      "id": "ref-39",
+      "text": "[39] Noam Shazeer, Azalia Mirhoseini, Krzysztof Maziarz, Andy Davis, Quoc Le, Geoffrey Hinton, and Jeff Dean. Outrageously large neural networks: The sparsely-gated mixture-of-experts layer. arXiv preprint arXiv:1701.06538, 2017.",
+      "title": "Outrageously large neural networks: The sparsely-gated mixture-of-experts layer",
+      "authors": [
+        "Noam Shazeer",
+        "Azalia Mirhoseini",
+        "Krzysztof Maziarz",
+        "Andy Davis",
+        "Quoc Le",
+        "Geoffrey Hinton",
+        "Jeff Dean"
+      ],
+      "venue": "arXiv preprint arXiv:1701.06538",
+      "year": 2017,
+      "doi": null,
+      "arxiv": "1701.06538",
+      "url": null
+    },
+    {
+      "id": "ref-40",
+      "text": "[40] William Fedus, Jeff Dean, and Barret Zoph. A review of sparse expert models in deep learning. arXiv preprint arXiv:2209.01667, 2022.",
+      "title": "A review of sparse expert models in deep learning",
+      "authors": [
+        "William Fedus",
+        "Jeff Dean",
+        "Barret Zoph"
+      ],
+      "venue": "arXiv preprint arXiv:2209.01667",
+      "year": 2022,
+      "doi": null,
+      "arxiv": "2209.01667",
+      "url": null
+    },
+    {
+      "id": "ref-41",
+      "text": "[41] Nan Du, Yanping Huang, Andrew M Dai, Simon Tong, Dmitry Lepikhin, Yuanzhong Xu, Maxim Krikun, Yanqi Zhou, Adams Wei Yu, Orhan Firat, et al. Glam: Efficient scaling of language models with mixture-of-experts. In International conference on machine learning, pages 5547–5569. PMLR, 2022.",
+      "title": "Glam: Efficient scaling of language models with mixture-of-experts",
+      "authors": [
+        "Nan Du",
+        "Yanping Huang",
+        "Andrew M Dai",
+        "Simon Tong",
+        "Dmitry Lepikhin",
+        "Yuanzhong Xu",
+        "Maxim Krikun",
+        "Yanqi Zhou",
+        "Adams Wei Yu",
+        "Orhan Firat",
+        "et al."
+      ],
+      "venue": "In International conference on machine learning",
+      "year": 2022,
+      "doi": null,
+      "arxiv": null,
+      "url": null
+    },
+    {
+      "id": "ref-42",
+      "text": "[42] William Fedus, Barret Zoph, and Noam Shazeer. Switch transformers: Scaling to trillion parameter models with simple and efficient sparsity. Journal of Machine Learning Research, 23 (120):1–39, 2022.",
+      "title": "Switch transformers: Scaling to trillion parameter models with simple and efficient sparsity",
+      "authors": [
+        "William Fedus",
+        "Barret Zoph",
+        "Noam Shazeer"
+      ],
+      "venue": "Journal of Machine Learning Research",
+      "year": 2022,
+      "doi": null,
+      "arxiv": null,
+      "url": null
+    },
+    {
+      "id": "ref-43",
+      "text": "[43] Aixin Liu, Bei Feng, Bin Wang, Bingxuan Wang, Bo Liu, Chenggang Zhao, Chengqi Dengr, Chong Ruan, Damai Dai, Daya Guo, et al. Deepseek-v2: A strong, economical, and efficient mixture-of-experts language model. arXiv preprint arXiv:2405.04434, 2024.",
+      "title": "Deepseek-v2: A strong, economical, and efficient mixture-of-experts language model",
+      "authors": [
+        "Aixin Liu",
+        "Bei Feng",
+        "Bin Wang",
+        "Bingxuan Wang",
+        "Bo Liu",
+        "Chenggang Zhao",
+        "Chengqi Dengr",
+        "Chong Ruan",
+        "Damai Dai",
+        "Daya Guo",
+        "et al."
+      ],
+      "venue": "arXiv preprint arXiv:2405.04434",
+      "year": 2024,
+      "doi": null,
+      "arxiv": "2405.04434",
+      "url": null
+    },
+    {
+      "id": "ref-44",
+      "text": "[44] Aixin Liu, Bei Feng, Bing Xue, Bingxuan Wang, Bochao Wu, Chengda Lu, Chenggang Zhao, Chengqi Deng, Chenyu Zhang, Chong Ruan, et al. Deepseek-v3 technical report. arXiv preprint arXiv:2412.19437, 2024.",
+      "title": "Deepseek-v3 technical report",
+      "authors": [
+        "Aixin Liu",
+        "Bei Feng",
+        "Bing Xue",
+        "Bingxuan Wang",
+        "Bochao Wu",
+        "Chengda Lu",
+        "Chenggang Zhao",
+        "Chengqi Deng",
+        "Chenyu Zhang",
+        "Chong Ruan",
+        "et al."
+      ],
+      "venue": "arXiv preprint arXiv:2412.19437",
+      "year": 2024,
+      "doi": null,
+      "arxiv": "2412.19437",
+      "url": null
+    }
+  ],
+  "footnotes": [],
+  "crossref": {
+    "by_label": {
+      "Figure 1": "fig-1",
+      "Figure 1 (a)": "fig-1",
+      "Figure 1 (b)": "fig-1",
+      "Figure 1 (c)": "fig-1",
+      "Figure 1 (d)": "fig-1",
+      "Figure 2": "fig-2",
+      "Figure 2 (a)": "fig-2",
+      "Figure 2 (b)": "fig-2",
+      "Figure 2 (c.1)": "fig-2",
+      "Figure 2 (c.2)": "fig-2",
+      "Figure 3": "fig-3",
+      "Figure 4": "fig-4",
+      "Figure 5": "fig-5",
+      "Figure 6": "fig-6",
+      "Figure 7": "fig-7",
+      "Table 1": "tbl-1",
+      "Table 2": "tbl-2",
+      "Table 3": "tbl-3",
+      "Section 2.1": "sec-2-1-dataset-construction",
+      "Section 2.2": "sec-2-2-safety-related-expert-activation-probability-modeling",
+      "Sections 2.2–2.5": "sec-2-workflow-of-safex"
+    }
+  },
+  "diagnostics": {
+    "warnings": [
+      "The author list in the source markdown contains affiliations and symbols (†, *) which have been stripped to extract names.",
+      "The term '$\\bar { 2 } 2 \\%$' was interpreted as '22%'.",
+      "The term '$4 8 . 4 \\%$' was interpreted as '48.4%'.",
+      "The term '$2 7 . 8 \\%$' was interpreted as '27.8%'.",
+      "The reference [35] contained a malformed URL which was corrected from '...id $\\underset { . } { = }$ 9H91juqfgb' to '...id=9H91juqfgb'.",
+      "In the appendix, the text refers to figures and tables with numbers that do not match their captions (e.g., text says 'Figure 2' but caption is 'Figure 6'). The JSON uses the numbers from the captions for IDs."
+    ],
+    "stats": {
+      "sections": 12,
+      "figures": 7,
+      "tables": 3,
+      "equations": 6,
+      "citations": 58,
+      "references": 44
+    }
+  }
+}
